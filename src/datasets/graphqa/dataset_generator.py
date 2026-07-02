@@ -179,10 +179,6 @@ if OOD_TEST:
     y_temp = [y[i] for i in test_indices]
     
     train_permutations = np.random.permutation(len(train_indices))
-    
-
-    test_permutations = np.random.permutation(len(test_indices))
-    test_indices = [test_indices[i] for i in test_permutations]
     X_train = np.array(X_train)[train_permutations]
     y_train = np.array(y_train)[train_permutations]
 
