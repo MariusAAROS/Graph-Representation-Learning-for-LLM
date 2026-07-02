@@ -1,7 +1,7 @@
 import sys, os
-# os.chdir("../../..")
-print("dir", os.getcwd())
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
+import json
 from data.graphqa.data_generator import graph_generators, graph_tasks, graph_text_encoders
 from data.graphqa.data_generator.graph_tasks import CycleCheck, \
                                                     EdgeExistence, \
@@ -20,6 +20,7 @@ from data.graphqa.data_generator.graph_text_encoders import adjacency_encoder, \
                                                         incident_encoder, \
                                                         social_network_encoder, \
                                                         expert_encoder
+from sklearn.model_selection import train_test_split
 
 
 N_GRAPHS = 5
@@ -62,26 +63,28 @@ for algo in ALGORITHMS:
             generator_algorithms=[algo] * len(graphs),
             encoding_method=ENCODING_METHODS
         )
-        for sample in samples:
+        for sample in samples.values():
             rows.append({
+                # "id": sample["id"],
                 "algorithm": algo,
                 "task": task.__class__.__name__,
+                "nnodes": sample["nnodes"],
+                "nedges": sample["nedges"],
                 "question": sample["question"],
                 "answer": sample["answer"]
             })
+x_keys = [key for key in rows[0].keys() if key != "answer"]
+X = [{key: row[key] for key in x_keys} for row in rows]
+y = [row["answer"] for row in rows]
 
-print("rows")
+X_train, X_temp, y_train, y_temp = train_test_split(X, y, train_size=TRAIN_SPLIT, random_state=SEED)
+X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=SEED)
 
+train_data = [{"id": f"train_{i}", **x, "answer": y} for i, (x, y) in enumerate(zip(X_train, y_train))]
+val_data = [{"id": f"val_{i}", **x, "answer": y} for i, (x, y) in enumerate(zip(X_val, y_val))]
+test_data = [{"id": f"test_{i}", **x, "answer": y} for i, (x, y) in enumerate(zip(X_test, y_test))]
 
-
-
-
-# for split in SPLITS:
-     
-
-# with open(f"{OUTPUT_DIR}graphqa_dataset.json", "w") as f:
-#     pass
-
-
-
-
+for split, data in zip(SPLITS, [train_data, val_data, test_data]):
+    output_file = os.path.join(OUTPUT_DIR, f"{split}.json")
+    with open(output_file, "w") as f:
+        json.dump(data, f, indent=4)

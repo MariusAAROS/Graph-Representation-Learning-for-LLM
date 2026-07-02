@@ -3,5 +3,11 @@
 **__pycache__/
 **.ipynb_checkpoints
 **/*.pth
+
 # Redundant data files
 results/
+
+# Data
+*train.json
+*val.json
+*test.json
