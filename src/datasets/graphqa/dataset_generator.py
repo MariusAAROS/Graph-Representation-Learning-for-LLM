@@ -1,9 +1,9 @@
 import sys, os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 import json
-from data.graphqa.data_generator import graph_generators, graph_tasks, graph_text_encoders
-from data.graphqa.data_generator.graph_tasks import CycleCheck, \
+from datasets.graphqa import graph_generators
+from datasets.graphqa.graph_tasks import CycleCheck, \
                                                     EdgeExistence, \
                                                     NodeCount, \
                                                     NodeDegree, \
@@ -14,7 +14,7 @@ from data.graphqa.data_generator.graph_tasks import CycleCheck, \
                                                     ShortestPath, \
                                                     TriangleCounting, \
                                                     MaximumFlow
-from data.graphqa.data_generator.graph_text_encoders import adjacency_encoder, \
+from datasets.graphqa.graph_text_encoders import adjacency_encoder, \
                                                         friendship_encoder, \
                                                         coauthorship_encoder, \
                                                         incident_encoder, \
