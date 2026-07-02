@@ -21,9 +21,10 @@ from data.graphqa.data_generator.graph_text_encoders import adjacency_encoder, \
                                                         social_network_encoder, \
                                                         expert_encoder
 from sklearn.model_selection import train_test_split
+from tqdm import tqdm
 
 
-N_GRAPHS = 5
+N_GRAPHS = 50
 DIRECTED = False
 ALGORITHMS = ["er", "ba", "sbm", "sfn", "complete", "star", "path"]
 TASKS = [CycleCheck(), EdgeExistence(), NodeCount(), 
@@ -40,13 +41,13 @@ AVAILABLE_ENCODING_METHODS = ["adjacency", "incident", "friendship",
                     "social_network", "expert", "coauthorship",
                     "random", "nx_node_name"]
 ENCODING_METHODS = AVAILABLE_ENCODING_METHODS[0]
-TRAIN_SPLIT = 0.7
+TRAIN_SPLIT = 0.8
 TEST_SPLIT = (1 - TRAIN_SPLIT) / 2
 VAL_SPLIT = TEST_SPLIT
 
-# samples = {}
+print(f"Generating {N_GRAPHS*len(ALGORITHMS)*len(TASKS)} samples for {len(ALGORITHMS)} algorithms and {len(TASKS)} tasks.")
 rows = []
-for algo in ALGORITHMS:
+for algo in tqdm(ALGORITHMS, desc="Algorithms"):
     graphs = graph_generators.generate_graphs(
         number_of_graphs=N_GRAPHS,
         algorithm=algo,
@@ -57,7 +58,7 @@ for algo in ALGORITHMS:
     )
 
     # samples[algo] = {}
-    for task in TASKS:
+    for task in tqdm(TASKS, desc=f"Tasks for {algo}"):
         samples = task.prepare_examples_dict(
             graphs=graphs,
             generator_algorithms=[algo] * len(graphs),
@@ -84,7 +85,9 @@ train_data = [{"id": f"train_{i}", **x, "answer": y} for i, (x, y) in enumerate(
 val_data = [{"id": f"val_{i}", **x, "answer": y} for i, (x, y) in enumerate(zip(X_val, y_val))]
 test_data = [{"id": f"test_{i}", **x, "answer": y} for i, (x, y) in enumerate(zip(X_test, y_test))]
 
+print(f"Train samples: {len(train_data)}, Validation samples: {len(val_data)}, Test samples: {len(test_data)}")
 for split, data in zip(SPLITS, [train_data, val_data, test_data]):
     output_file = os.path.join(OUTPUT_DIR, f"{split}.json")
     with open(output_file, "w") as f:
         json.dump(data, f, indent=4)
+print("Datasets saved successfully.")
