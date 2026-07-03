@@ -28,16 +28,34 @@ class MetaICLDataset(Dataset):
             "\n".join([r["example"][i] for i in ex_idx]) + \
             "\n"+ self.QUESTION_TAG + "\n" + r["question"] + r["answer"]
         return {
-            "example": [r["example"][i] for i in ex_idx],
-            "question": r["question"],
+            # "example": [r["example"][i] for i in ex_idx],
+            # "question": r["question"],
+            "answer": r["answer"],
+            "prompt": prompt
+        }
+    
+class BaselineDataset(Dataset):
+    def __init__(self, path: str):
+        self.records = read_json(path)
+        self.QUESTION_TAG = "#### Question"
+
+    def __len__(self):
+        return len(self.records)
+
+    def __getitem__(self, idx):
+        r = self.records[idx]
+        prompt = self.QUESTION_TAG + "\n" + r["question"] + r["answer"]
+        return {
+            # "example": [r["example"][i] for i in ex_idx],
+            # "question": r["question"],
             "answer": r["answer"],
             "prompt": prompt
         }
 
-def make_meta_icl_collator(tokenizer, max_length=1024, padding_side="left"):
+def make_collator(tokenizer, max_length=1024, padding_side="left"):
     if not tokenizer.is_fast:
         raise ValueError(
-            "make_meta_icl_collator requires a fast tokenizer "
+            "make_collator requires a fast tokenizer "
             "(e.g. GPT2TokenizerFast) for offset mapping."
         )
     if tokenizer.pad_token is None:

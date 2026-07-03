@@ -6,7 +6,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from torch.utils.data import DataLoader
 import os
 from transformers import AutoTokenizer
-from src.datasets.loaders import MetaICLDataset, make_meta_icl_collator
+from src.datasets.loaders import MetaICLDataset, make_collator
 from src.models.meta_icl import MetaICL
 
 
@@ -31,7 +31,7 @@ def train(cfg: DictConfig):
         val_dataset   = MetaICLDataset(paths["val"], k=cfg.dataset.n_examples)
 
         model = MetaICL(cfg)
-        collator = make_meta_icl_collator(
+        collator = make_collator(
             tokenizer=AutoTokenizer.from_pretrained(cfg.model.name, use_fast=True),
             max_length=cfg.model.max_seq_len,
             padding_side="left"
