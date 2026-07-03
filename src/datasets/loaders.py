@@ -34,9 +34,52 @@ class MetaICLDataset(Dataset):
             "prompt": prompt
         }
 
-def make_meta_icl_collator(tokenizer):
+def make_meta_icl_collator(tokenizer, max_length=1024, padding_side="left"):
+    if not tokenizer.is_fast:
+        raise ValueError(
+            "make_meta_icl_collator requires a fast tokenizer "
+            "(e.g. GPT2TokenizerFast) for offset mapping."
+        )
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.truncation_side = "left"
+    tokenizer.padding_side = padding_side
+
     def collator(batch):
-        pass
+        prompts = [item["prompt"] for item in batch]
+        answers = [item["answer"] for item in batch]
+
+        enc = tokenizer(
+            prompts,
+            padding=True,
+            truncation=True,
+            max_length=max_length,
+            return_tensors="pt",
+            return_offsets_mapping=True,
+        )
+
+        input_ids = enc["input_ids"]
+        attention_mask = enc["attention_mask"]
+        offsets = enc["offset_mapping"]
+
+        labels = input_ids.clone()
+        for i in range(len(prompts)):
+            # The answer is the suffix of the prompt, so it starts here.
+            ans_char_start = len(prompts[i]) - len(answers[i])
+            ends = offsets[i, :, 1]
+            # Keep any token that extends past the answer boundary. This covers
+            # the first answer token even when it merges the preceding space
+            # (e.g. " Yes"). Special/pad tokens have offsets (0, 0) and are
+            # excluded, as are padding positions via the attention mask.
+            keep = (ends > ans_char_start) & (attention_mask[i] == 1)
+            labels[i][~keep] = -100
+
+        return {
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+            "labels": labels,
+        }
+
     return collator
 
 
