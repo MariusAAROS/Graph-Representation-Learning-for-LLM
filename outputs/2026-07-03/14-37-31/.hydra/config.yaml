@@ -1,0 +1,28 @@
+config_name: meta-icl
+dataset:
+  name: graphqa
+  test_type: ood
+  dataset_config: meta_icl
+  batch_size: 8
+  n_examples: 5
+  num_workers: 1
+model:
+  name: gpt2
+  lr: 2.0e-05
+  max_seq_len: 1024
+  max_new_tokens: 50
+trainer:
+  max_epochs: 10
+  precision: bf16-mixed
+  accelerator: auto
+  checkpoint_monitor: val/exact_match
+  checkpoint_mode: max
+  early_stopping_monitor: val/exact_match
+  early_stopping_patience: 3
+  early_stopping_mode: max
+  predictions_dir: predictions
+  gradient_clip_val: 1.0
+  val_check_interval: 1.0
+logger:
+  project: Meta-ICL
+  name: meta-icl

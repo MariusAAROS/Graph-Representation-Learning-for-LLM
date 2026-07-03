@@ -4,46 +4,52 @@ import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from torch.utils.data import DataLoader
+import os
+from transformers import AutoTokenizer
+from src.datasets.loaders import MetaICLDataset, make_meta_icl_collator
+from src.models.meta_icl import MetaICL
 
 
 
-@hydra.main(config_path="configs", config_name="clever.yaml", version_base="1.2")
+@hydra.main(config_path="configs", config_name="meta_icl.yaml", version_base="1.2")
 def train(cfg: DictConfig):
     wandb_logger = WandbLogger(project=cfg.logger.project, name=cfg.logger.name)
+    BASE_DIR = "data/"
+    if cfg.dataset.name == "graphqa":
+        paths = {}
+        for split in ["train", "val", "test"]:
+            current_path = os.path.join(BASE_DIR, "graphqa",
+                                        f"{cfg.dataset.dataset_config}",
+                                        f"{cfg.dataset.test_type}",
+                                        f"{split}.json")
+            if os.path.exists(current_path):
+                paths[split] = current_path
+            else:
+                raise FileNotFoundError(f"File not found: {current_path}")
+        
+        train_dataset = MetaICLDataset(paths["train"], k=cfg.dataset.n_examples)
+        val_dataset   = MetaICLDataset(paths["val"], k=cfg.dataset.n_examples)
 
-    if cfg.config_name == "<COMPLETE>":
-        if cfg.dataset.name == "<COMPLETE>":
-            train_dataset = ...
-            val_dataset   = ...
-        else:
-            raise ValueError(f"Unknown dataset name: {cfg.dataset.name}")
-        model = ...
-        collator = ...
-    elif cfg.config_name == "<BASELINE>":
-        if cfg.dataset.name == "<COMPLETE>":
-            train_dataset = ...
-            val_dataset   = ...
-        elif cfg.dataset.name == "<COMPLETE>":
-            train_dataset = ...
-            val_dataset   = ...
-        else:
-            raise ValueError(f"Unknown dataset name: {cfg.dataset.name}")
-        model = ...
-        collator = ...
+        model = MetaICL(cfg)
+        collator = make_meta_icl_collator(
+            tokenizer=AutoTokenizer.from_pretrained(cfg.model.name, use_fast=True),
+            max_length=cfg.model.max_seq_len,
+            padding_side="left"
+        )
     else:
-        raise ValueError(f"Unknown config name: {cfg.config_name}")
+        raise ValueError(f"Unknown dataset name: {cfg.dataset.name}")
 
     # batch_size = n_tasks_per_batch: each item is one episode (one task)
     train_loader = DataLoader(
         train_dataset,
-        batch_size=cfg.dataset.n_tasks_per_batch,
+        batch_size=cfg.dataset.batch_size,
         shuffle=True,
         num_workers=cfg.dataset.num_workers,
         collate_fn=collator,
     )
     val_loader = DataLoader(
         val_dataset,
-        batch_size=cfg.dataset.n_tasks_per_batch,
+        batch_size=cfg.dataset.batch_size,
         shuffle=False,
         num_workers=cfg.dataset.num_workers,
         collate_fn=collator,

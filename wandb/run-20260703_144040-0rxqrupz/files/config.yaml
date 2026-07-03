@@ -1,0 +1,80 @@
+_wandb:
+    value:
+        cli_version: 0.28.0
+        e:
+            0itje0v1hdk9j54nidsv0npvbqhvby6r:
+                args:
+                    - --config-name=meta_icl
+                codePath: runner.py
+                codePathLocal: runner.py
+                cpu_count: 20
+                cpu_count_logical: 28
+                disk:
+                    /:
+                        total: "105089261568"
+                        used: "56665141248"
+                email: m.ortega@groupeonepoint.com
+                executable: /home/mortega/repositories/graph-representation-learning-for-llm/.venv/bin/python
+                git:
+                    commit: 77e565bc911efb6ed20c0b3dd3438e488d3f0153
+                    remote: https://gitlab.groupeonepoint.com/m.ortega/graph-representation-learning-for-llm.git
+                host: SGOP079
+                memory:
+                    total: "65900367872"
+                os: Linux-7.0.0-27-generic-x86_64-with-glibc2.43
+                program: /home/mortega/repositories/graph-representation-learning-for-llm/runner.py
+                python: CPython 3.12.13
+                root: .
+                startedAt: "2026-07-03T12:40:40.445119Z"
+                writerId: 0itje0v1hdk9j54nidsv0npvbqhvby6r
+        m:
+            - "1": trainer/global_step
+              "6":
+                - 3
+              "7": []
+            - "2": '*'
+              "5": 1
+              "6":
+                - 1
+              "7": []
+        python_version: 3.12.13
+        t:
+            "1":
+                - 1
+                - 5
+                - 9
+                - 11
+                - 49
+                - 50
+                - 53
+                - 71
+                - 103
+            "2":
+                - 1
+                - 5
+                - 9
+                - 11
+                - 49
+                - 50
+                - 53
+                - 71
+                - 103
+            "3":
+                - 7
+                - 13
+                - 66
+            "4": 3.12.13
+            "5": 0.28.0
+            "6": 5.12.1
+            "12": 0.28.0
+            "13": linux-x86_64
+config_name:
+    value: meta-icl
+dataset:
+    value: '{''name'': ''graphqa'', ''test_type'': ''ood'', ''dataset_config'': ''meta-icl'', ''batch_size'': 8, ''n_examples'': 5, ''num_workers'': 1}'
+logger:
+    value: '{''project'': ''Meta-ICL'', ''name'': ''meta-icl''}'
+model:
+    value: '{''name'': ''gpt2'', ''lr'': 2e-05, ''max_seq_len'': 1024, ''max_new_tokens'': 50}'
+trainer:
+    value: '{''max_epochs'': 10, ''precision'': ''bf16-mixed'', ''accelerator'': ''auto'', ''checkpoint_monitor'': ''val/exact_match'', ''checkpoint_mode'': ''max'', ''early_stopping_monitor'': ''val/exact_match'', ''early_stopping_patience'': 3, ''early_stopping_mode'': ''max'', ''predictions_dir'': ''predictions'', ''gradient_clip_val'': 1.0, ''val_check_interval'': 1.0}'
