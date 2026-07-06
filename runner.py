@@ -6,7 +6,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from torch.utils.data import DataLoader
 import os
 from transformers import AutoTokenizer
-from src.datasets.loaders import MetaICLDataset, make_collator
+from src.datasets.loaders import MetaICLDataset, BaselineDataset, make_collator
 from src.models.meta_icl import MetaICL
 
 
@@ -27,8 +27,14 @@ def train(cfg: DictConfig):
             else:
                 raise FileNotFoundError(f"File not found: {current_path}")
         
-        train_dataset = MetaICLDataset(paths["train"], k=cfg.dataset.n_examples)
-        val_dataset   = MetaICLDataset(paths["val"], k=cfg.dataset.n_examples)
+        if cfg.dataset.dataset_config == "meta-icl":
+            train_dataset = MetaICLDataset(paths["train"], k=cfg.dataset.n_examples)
+            val_dataset   = MetaICLDataset(paths["val"], k=cfg.dataset.n_examples)
+        elif cfg.dataset.dataset_config == "baseline":
+            train_dataset = BaselineDataset(paths["train"])
+            val_dataset   = BaselineDataset(paths["val"])
+        else:
+            raise ValueError(f"Unknown dataset config: {cfg.dataset.dataset_config}")
 
         model = MetaICL(cfg)
         collator = make_collator(
