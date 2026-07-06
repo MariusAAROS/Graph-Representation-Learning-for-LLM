@@ -14,3 +14,5 @@ results/
 
 wandb
 outputs
+predictions
+Meta-ICL

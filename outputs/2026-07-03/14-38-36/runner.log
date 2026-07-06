@@ -1,8 +1,0 @@
-[2026-07-03 14:38:36,869][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/gpt2/resolve/main/config.json "HTTP/1.1 200 OK"
-[2026-07-03 14:38:36,975][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/gpt2/resolve/main/tokenizer_config.json "HTTP/1.1 200 OK"
-[2026-07-03 14:38:37,079][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/models/gpt2/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 307 Temporary Redirect"
-[2026-07-03 14:38:37,182][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/models/openai-community/gpt2/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
-[2026-07-03 14:38:37,284][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/models/gpt2/tree/main?recursive=true&expand=false "HTTP/1.1 307 Temporary Redirect"
-[2026-07-03 14:38:37,387][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/models/openai-community/gpt2/tree/main?recursive=true&expand=false "HTTP/1.1 200 OK"
-[2026-07-03 14:38:37,617][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/gpt2/resolve/main/config.json "HTTP/1.1 200 OK"
-[2026-07-03 14:38:37,827][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/gpt2/resolve/main/generation_config.json "HTTP/1.1 200 OK"
