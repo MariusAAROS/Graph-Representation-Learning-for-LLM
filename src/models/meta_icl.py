@@ -33,7 +33,7 @@ class MetaICL(pl.LightningModule):
 
         outputs = self.model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
         loss = outputs.loss
-        self.log("train_loss", loss)
+        self.log("train/loss", loss)
         return loss
     
     def validation_step(self, batch):
@@ -45,7 +45,7 @@ class MetaICL(pl.LightningModule):
         loss = outputs.loss
         logits = outputs.logits
         preds = torch.argmax(logits, dim=-1)
-        self.log("val_loss", loss, prog_bar=True)
+        self.log("val/loss", loss, prog_bar=True)
     
         for i in range(len(preds)):
             self._val_buffer.append({
@@ -75,9 +75,12 @@ class MetaICL(pl.LightningModule):
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
             for item in self._val_buffer:
+                decoded_pred = self.tokenizer.decode(item["pred"], skip_special_tokens=True)
+                decoded_label = self.tokenizer.decode(item["label"], skip_special_tokens=True)
+                item["pred"] = decoded_pred
+                item["label"] = decoded_label
                 writer.writerow(item)
-
-        self._val_buffer.clear()  
+        self._val_buffer.clear() 
 
     def configure_optimizers(self):
         return torch.optim.AdamW(self.model.parameters(), lr=self.hparams.model.lr)

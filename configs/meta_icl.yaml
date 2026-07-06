@@ -24,7 +24,7 @@ trainer:
   early_stopping_patience: 3
   early_stopping_mode: "max"
   predictions_dir: "predictions"
-  gradient_clip_val: 1.0
+  gradient_clip_val: 0
   val_check_interval: 1.0
 
 logger:
