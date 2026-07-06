@@ -14,7 +14,8 @@ class MetaICL(pl.LightningModule):
             print(f"Warning: No pad_token found for {self.hparams.model.name}, setting pad_token to eos_token ({self.tokenizer.eos_token})")
         self.tokenizer.padding_side = "left"
         
-        self.model = AutoModelForCausalLM.from_pretrained(self.hparams.model.name, device_map="auto")
+        self.model = AutoModelForCausalLM.from_pretrained(self.hparams.model.name)
+        self.model.train()
         self.model.config.pad_token_id = self.tokenizer.pad_token_id
 
         # Per-run predictions directory, named by timestamp + logger run name
@@ -44,13 +45,17 @@ class MetaICL(pl.LightningModule):
         outputs = self.model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
         loss = outputs.loss
         logits = outputs.logits
-        preds = torch.argmax(logits, dim=-1)
+        # Causal LM: logits at position t predict token t+1, so shift to align
+        # predictions with their target labels before comparing.
+        shift_logits = logits[:, :-1, :]
+        shift_labels = labels[:, 1:]
+        preds = torch.argmax(shift_logits, dim=-1)
         self.log("val/loss", loss, prog_bar=True)
     
         for i in range(len(preds)):
             self._val_buffer.append({
-                "pred": preds[i],
-                "label": labels[i],
+                "pred": preds[i].cpu(),
+                "label": shift_labels[i].cpu(),
                 "loss": loss.item(),
             })
 

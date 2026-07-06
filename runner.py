@@ -34,7 +34,7 @@ def train(cfg: DictConfig):
         collator = make_collator(
             tokenizer=AutoTokenizer.from_pretrained(cfg.model.name, use_fast=True),
             max_length=cfg.model.max_seq_len,
-            padding_side="left"
+            padding_side="right"
         )
     else:
         raise ValueError(f"Unknown dataset name: {cfg.dataset.name}")

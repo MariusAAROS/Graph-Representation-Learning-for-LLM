@@ -52,7 +52,7 @@ class BaselineDataset(Dataset):
             "prompt": prompt
         }
 
-def make_collator(tokenizer, max_length=1024, padding_side="left"):
+def make_collator(tokenizer, max_length=1024, padding_side="right"):
     if not tokenizer.is_fast:
         raise ValueError(
             "make_collator requires a fast tokenizer "
