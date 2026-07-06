@@ -11,3 +11,6 @@ results/
 *train.json
 *val.json
 *test.json
+
+wandb
+outputs

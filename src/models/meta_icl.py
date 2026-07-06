@@ -49,8 +49,8 @@ class MetaICL(pl.LightningModule):
     
         for i in range(len(preds)):
             self._val_buffer.append({
-                "pred": preds[i].item(),
-                "label": int(labels[i].item()),
+                "pred": preds[i],
+                "label": labels[i],
                 "loss": loss.item(),
             })
 
@@ -58,7 +58,13 @@ class MetaICL(pl.LightningModule):
         if not self._val_buffer:
             return
         # Calculate accuracy
-        correct = sum(1 for item in self._val_buffer if item["pred"] == item["label"])
+        for item in self._val_buffer:
+            filtering_mask = item["label"] != -100
+            item["pred"] = item["pred"][filtering_mask]
+            item["label"] = item["label"][filtering_mask]
+            
+        # self._val_buffer = [item for item in self._val_buffer if item["label"] != -100]         
+        correct = sum(1 for item in self._val_buffer if torch.equal(item["pred"], item["label"]))
         accuracy = correct / len(self._val_buffer)
         self.log("val/accuracy", accuracy, prog_bar=True)
 
