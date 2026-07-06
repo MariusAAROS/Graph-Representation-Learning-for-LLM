@@ -84,4 +84,3 @@ class MetaICL(pl.LightningModule):
 
     def configure_optimizers(self):
         return torch.optim.AdamW(self.model.parameters(), lr=self.hparams.model.lr)
-
