@@ -66,7 +66,7 @@ class MetaICL(pl.LightningModule):
         # self._val_buffer = [item for item in self._val_buffer if item["label"] != -100]         
         correct = sum(1 for item in self._val_buffer if torch.equal(item["pred"], item["label"]))
         accuracy = correct / len(self._val_buffer)
-        self.log("val/accuracy", accuracy, prog_bar=True)
+        self.log("val/exact_match", accuracy, prog_bar=True)
 
         # Save predictions to CSV
         predictions_file = os.path.join(self._predictions_dir, f"predictions_epoch_{self.current_epoch}.csv")
