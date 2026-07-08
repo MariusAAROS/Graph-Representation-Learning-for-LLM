@@ -1,9 +1,9 @@
-config_name: meta-icl
+config_name: baseline
 
 dataset:
   name: graphqa
   test_type: standard # ood, standard
-  dataset_config: "meta-icl"
+  dataset_config: "baseline"
   batch_size: 2                       # episodes per outer step
   n_examples: 5                     # number of examples per sample
   num_workers: 1
@@ -29,4 +29,4 @@ trainer:
 
 logger:
   project: "Meta-ICL"
-  name: "meta-icl"
+  name: "baseline"

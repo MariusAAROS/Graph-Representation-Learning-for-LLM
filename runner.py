@@ -10,10 +10,9 @@ from src.datasets.loaders import MetaICLDataset, BaselineDataset, make_collator
 from src.models.meta_icl import MetaICL
 
 
-
 @hydra.main(config_path="configs", config_name="meta_icl.yaml", version_base="1.2")
 def train(cfg: DictConfig):
-    logger_name = f"{cfg.dataset.dataset_config}-{'id' if cfg.dataset.test_type == 'standard' else 'ood'}"
+    logger_name = f"{cfg.logger.name}-{'id' if cfg.dataset.test_type == 'standard' else 'ood'}"
     wandb_logger = WandbLogger(project=cfg.logger.project, name=logger_name)
     BASE_DIR = "data/"
     if cfg.dataset.name == "graphqa":
