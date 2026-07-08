@@ -3,14 +3,14 @@ config_name: meta-icl
 dataset:
   name: graphqa
   test_type: standard # ood, standard
-  dataset_config: "baseline" # meta-icl, baseline
+  dataset_config: "meta-icl" # meta-icl, baseline
   batch_size: 2                       # episodes per outer step
   n_examples: 5                     # number of examples per sample
   num_workers: 1
 
 model:
   name: "gpt2"
-  lr: 5e-5          
+  lr: 5e-4          
   max_seq_len: 1024
   max_new_tokens: 50
 
