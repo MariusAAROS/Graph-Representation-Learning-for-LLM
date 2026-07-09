@@ -82,7 +82,8 @@ def train(cfg: DictConfig):
         log_every_n_steps=10,
         callbacks=[checkpoint_cb, early_stop_cb],
         val_check_interval=cfg.trainer.val_check_interval,
-        # gradient_clip_val=cfg.trainer.gradient_clip_val,
+        gradient_clip_val=cfg.trainer.gradient_clip_val,
+        accumulate_grad_batches=cfg.trainer.gradient_accumulation,
     )
 
     trainer.fit(model, train_loader, val_loader)

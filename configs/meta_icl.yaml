@@ -4,15 +4,24 @@ dataset:
   name: graphqa
   test_type: standard # ood, standard
   dataset_config: "meta-icl"
-  batch_size: 2                       # episodes per outer step
+  batch_size: 8                       # episodes per outer step
   n_examples: 5                     # number of examples per sample
   num_workers: 1
 
 model:
   name: "gpt2"
-  lr: 5e-4          
+  lr: 5e-5          
   max_seq_len: 1024
   max_new_tokens: 50
+  gradient_checkpointing: true
+
+lora:
+  enabled: false
+  r: 8
+  alpha: 16
+  dropout: 0.05
+  bias: "none"
+  target_modules: ["c_attn"]
 
 trainer:
   max_epochs: 10
@@ -26,6 +35,7 @@ trainer:
   predictions_dir: "predictions"
   gradient_clip_val: 0
   val_check_interval: 1.0
+  gradient_accumulation: 4
 
 logger:
   project: "Meta-ICL"

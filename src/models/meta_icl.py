@@ -1,4 +1,5 @@
 from transformers import AutoTokenizer, AutoModelForCausalLM
+from peft import LoraConfig, get_peft_model
 import os, csv
 from datetime import datetime
 import pytorch_lightning as pl
@@ -17,6 +18,21 @@ class MetaICL(pl.LightningModule):
         self.model = AutoModelForCausalLM.from_pretrained(self.hparams.model.name)
         self.model.train()
         self.model.config.pad_token_id = self.tokenizer.pad_token_id
+        if getattr(self.hparams.model, "gradient_checkpointing", False):
+            self.model.gradient_checkpointing_enable()
+
+        lora_cfg = getattr(self.hparams, "lora", None)
+        if lora_cfg is not None and getattr(lora_cfg, "enabled", False):
+            peft_config = LoraConfig(
+                task_type="CAUSAL_LM",
+                r=lora_cfg.r,
+                lora_alpha=lora_cfg.alpha,
+                lora_dropout=lora_cfg.dropout,
+                bias=lora_cfg.bias,
+                target_modules=list(lora_cfg.target_modules),
+            )
+            self.model = get_peft_model(self.model, peft_config)
+            self.model.print_trainable_parameters()
 
         # Per-run predictions directory, named by timestamp + logger run name
         run_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
