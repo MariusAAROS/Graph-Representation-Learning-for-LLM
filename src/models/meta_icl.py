@@ -67,12 +67,14 @@ class MetaICL(pl.LightningModule):
         shift_labels = labels[:, 1:]
         preds = torch.argmax(shift_logits, dim=-1)
         self.log("val/loss", loss, prog_bar=True)
-    
+
+        tasks = batch.get("task", [None] * len(preds))
         for i in range(len(preds)):
             self._val_buffer.append({
                 "pred": preds[i].cpu(),
                 "label": shift_labels[i].cpu(),
                 "loss": loss.item(),
+                "task": tasks[i],
             })
 
     def on_validation_epoch_end(self):
@@ -83,24 +85,52 @@ class MetaICL(pl.LightningModule):
             filtering_mask = item["label"] != -100
             item["pred"] = item["pred"][filtering_mask]
             item["label"] = item["label"][filtering_mask]
-            
-        # self._val_buffer = [item for item in self._val_buffer if item["label"] != -100]         
-        correct = sum(1 for item in self._val_buffer if torch.equal(item["pred"], item["label"]))
-        accuracy = correct / len(self._val_buffer)
+
+        # Global exact-match accuracy
+        correct = sum(
+            1 for item in self._val_buffer
+            if torch.equal(item["pred"], item["label"])
+        )
+        total = len(self._val_buffer)
+        accuracy = correct / total
         self.log("val/exact_match", accuracy, prog_bar=True)
+
+        # Per-task exact-match accuracy (some tasks are harder than others)
+        task_correct: dict = {}
+        task_total: dict = {}
+        for item in self._val_buffer:
+            task = item["task"] if item["task"] is not None else "unknown"
+            task_total[task] = task_total.get(task, 0) + 1
+            if torch.equal(item["pred"], item["label"]):
+                task_correct[task] = task_correct.get(task, 0) + 1
+        for task in sorted(task_total):
+            task_acc = task_correct.get(task, 0) / task_total[task]
+            self.log(f"val/exact_match_{task}", task_acc)
+            print(
+                f"[val] epoch {self.current_epoch} | task={task} | "
+                f"exact_match={task_acc:.4f} "
+                f"({task_correct.get(task, 0)}/{task_total[task]})"
+            )
+        print(
+            f"[val] epoch {self.current_epoch} | task=ALL | "
+            f"exact_match={accuracy:.4f} ({correct}/{total})"
+        )
 
         # Save predictions to CSV
         predictions_file = os.path.join(self._predictions_dir, f"predictions_epoch_{self.current_epoch}.csv")
         with open(predictions_file, "w", newline="") as csvfile:
-            fieldnames = ["pred", "label", "loss"]
+            fieldnames = ["task", "pred", "label", "loss"]
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
             for item in self._val_buffer:
                 decoded_pred = self.tokenizer.decode(item["pred"], skip_special_tokens=True)
                 decoded_label = self.tokenizer.decode(item["label"], skip_special_tokens=True)
-                item["pred"] = decoded_pred
-                item["label"] = decoded_label
-                writer.writerow(item)
+                writer.writerow({
+                    "task": item["task"],
+                    "pred": decoded_pred,
+                    "label": decoded_label,
+                    "loss": item["loss"],
+                })
         self._val_buffer.clear() 
 
     def configure_optimizers(self):

@@ -31,7 +31,9 @@ class MetaICLDataset(Dataset):
             # "example": [r["example"][i] for i in ex_idx],
             # "question": r["question"],
             "answer": r["answer"],
-            "prompt": prompt
+            "prompt": prompt,
+            "algorithm": r["algorithm"],
+            "task": r["task"],
         }
     
 class BaselineDataset(Dataset):
@@ -49,7 +51,9 @@ class BaselineDataset(Dataset):
             # "example": [r["example"][i] for i in ex_idx],
             # "question": r["question"],
             "answer": r["answer"],
-            "prompt": prompt
+            "prompt": prompt,
+            "algorithm": r["algorithm"],
+            "task": r["task"],
         }
 
 def make_collator(tokenizer, max_length=1024, padding_side="right"):
@@ -96,6 +100,8 @@ def make_collator(tokenizer, max_length=1024, padding_side="right"):
             "input_ids": input_ids,
             "attention_mask": attention_mask,
             "labels": labels,
+            "algorithm": [item["algorithm"] for item in batch],
+            "task": [item["task"] for item in batch],
         }
 
     return collator
