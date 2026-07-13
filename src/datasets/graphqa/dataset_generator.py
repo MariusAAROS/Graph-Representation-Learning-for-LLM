@@ -52,6 +52,10 @@ TEST_SPLIT = (1 - TRAIN_SPLIT) / 2
 VAL_SPLIT = TEST_SPLIT
 OOD_TEST = True
 OOD_SELECTION = "lastn" # random | lastn | cherrypick
+# Pool mode: keep ALL tasks in the files and split by sample count only.
+# The task to hold out is then chosen at RUNTIME (leave-one-task-out).
+# When True, writes to data/graphqa/{MODEL_TYPE}/ood_pool/{train,val,test}.json
+OOD_POOL_MODE = True
 
 # CycleCheck, EdgeExistence, NodeCount, 
 # NodeDegree, EdgeCount, ConnectedNodes, DisconnectedNodes, 
@@ -154,7 +158,13 @@ x_keys = [key for key in rows[0].keys() if key != "answer"]
 X = [{key: row[key] for key in x_keys} for row in rows]
 y = [row["answer"] for row in rows]
 
-if OOD_TEST:
+if OOD_POOL_MODE:
+    # Keep ALL tasks; split by sample count only. Which task is held out is
+    # decided at runtime by the trainer (see runner.py + dataset.ood_task).
+    X_train, X_temp, y_train, y_temp = train_test_split(X, y, train_size=TRAIN_SPLIT, random_state=SEED)
+    X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=SEED)
+    output_subdir = "ood_pool"
+elif OOD_TEST:
     n_ood = int(len(TASKS) * TEST_SPLIT)
     if OOD_SELECTION == "random":
         random.seed(SEED)
@@ -183,9 +193,11 @@ if OOD_TEST:
     y_train = np.array(y_train)[train_permutations]
 
     X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=SEED)
+    output_subdir = "ood"
 else:
     X_train, X_temp, y_train, y_temp = train_test_split(X, y, train_size=TRAIN_SPLIT, random_state=SEED)
     X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=SEED)
+    output_subdir = "standard"
 
 train_data = [{"id": f"train_{i}", **x, "answer": y} for i, (x, y) in enumerate(zip(X_train, y_train))]
 val_data = [{"id": f"val_{i}", **x, "answer": y} for i, (x, y) in enumerate(zip(X_val, y_val))]
@@ -194,7 +206,7 @@ test_data = [{"id": f"test_{i}", **x, "answer": y} for i, (x, y) in enumerate(zi
 print(f"Train samples: {len(train_data)}, Validation samples: {len(val_data)}, Test samples: {len(test_data)}")
 for split, data in zip(SPLITS, [train_data, val_data, test_data]):
     output_file = os.path.join(OUTPUT_DIR, MODEL_TYPE, 
-                               "ood" if OOD_TEST else "standard",
+                               output_subdir,
                                f"{split}.json")
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
     with open(output_file, "w") as f:

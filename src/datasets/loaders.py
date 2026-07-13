@@ -10,12 +10,55 @@ def read_json(path):
     with open(path, "r") as f:
         return json.load(f)
 
+
+def filter_records_by_task(records, include_task=None, exclude_task=None):
+    """Filter records by their "task" field.
+
+    - include_task: keep only records whose task == include_task
+    - exclude_task: drop records whose task == exclude_task
+    """
+    if include_task is not None:
+        records = [r for r in records if r["task"] == include_task]
+    if exclude_task is not None:
+        records = [r for r in records if r["task"] != exclude_task]
+    return records
+
+
+def split_holdout_task(records, task, seed=42, val_fraction=0.5):
+    """Deterministically split the held-out task's records into (val, test).
+
+    Used for leave-one-task-out OOD evaluation: the single held-out task is
+    split into a validation half (for monitoring/early stopping) and a test
+    half (for final evaluation).
+    """
+    import random as _random
+    holdout = [r for r in records if r["task"] == task]
+    rng = _random.Random(seed)
+    order = list(range(len(holdout)))
+    rng.shuffle(order)
+    n_val = int(len(order) * val_fraction)
+    val_idx = set(order[:n_val])
+    val = [holdout[i] for i in range(len(holdout)) if i in val_idx]
+    test = [holdout[i] for i in range(len(holdout)) if i not in val_idx]
+    return val, test
+
+
 class MetaICLDataset(Dataset):
     def __init__(self, path: str, k=0):
         self.records = read_json(path)
         self.k = k
         self.EXAMPLE_TAG = "#### Examples"
         self.QUESTION_TAG = "#### Question"
+
+    @classmethod
+    def _from_records(cls, records, k=0):
+        """Build a dataset from in-memory records instead of a file path."""
+        obj = cls.__new__(cls)
+        obj.records = records
+        obj.k = k
+        obj.EXAMPLE_TAG = "#### Examples"
+        obj.QUESTION_TAG = "#### Question"
+        return obj
 
     def __len__(self):
         return len(self.records)
@@ -40,6 +83,14 @@ class BaselineDataset(Dataset):
     def __init__(self, path: str):
         self.records = read_json(path)
         self.QUESTION_TAG = "#### Question"
+
+    @classmethod
+    def _from_records(cls, records):
+        """Build a dataset from in-memory records instead of a file path."""
+        obj = cls.__new__(cls)
+        obj.records = records
+        obj.QUESTION_TAG = "#### Question"
+        return obj
 
     def __len__(self):
         return len(self.records)

@@ -6,35 +6,86 @@ from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from torch.utils.data import DataLoader
 import os
 from transformers import AutoTokenizer
-from src.datasets.loaders import MetaICLDataset, BaselineDataset, make_collator
+from src.datasets.loaders import (
+    MetaICLDataset,
+    BaselineDataset,
+    make_collator,
+    read_json,
+    filter_records_by_task,
+    split_holdout_task,
+)
 from src.models.meta_icl import MetaICL
 
 
 @hydra.main(config_path="configs", config_name="meta_icl.yaml", version_base="1.2")
 def train(cfg: DictConfig):
-    logger_name = f"{cfg.logger.name}-{'id' if cfg.dataset.test_type == 'standard' else 'ood'}"
+    ood_task = cfg.dataset.get("ood_task", None)
+    is_loto = cfg.dataset.test_type == "ood" and ood_task is not None
+
+    if is_loto:
+        logger_name = f"{cfg.logger.name}-ood-{ood_task}"
+    else:
+        logger_name = f"{cfg.logger.name}-{'id' if cfg.dataset.test_type == 'standard' else 'ood'}"
     wandb_logger = WandbLogger(project=cfg.logger.project, name=logger_name)
     BASE_DIR = "data/"
     if cfg.dataset.name == "graphqa":
-        paths = {}
-        for split in ["train", "val", "test"]:
-            current_path = os.path.join(BASE_DIR, "graphqa",
-                                        f"{cfg.dataset.dataset_config}",
-                                        f"{cfg.dataset.test_type}",
-                                        f"{split}.json")
-            if os.path.exists(current_path):
-                paths[split] = current_path
+        if is_loto:
+            # Leave-one-task-out (LOTO): choose the held-out task at runtime from
+            # the OOD pool (all tasks present). train = every task except the
+            # held-out one; the held-out task is split 50/50 into val + test.
+            pool_records = []
+            for split in ["train", "val", "test"]:
+                pool_path = os.path.join(BASE_DIR, "graphqa",
+                                         f"{cfg.dataset.dataset_config}",
+                                         "ood_pool", f"{split}.json")
+                if not os.path.exists(pool_path):
+                    raise FileNotFoundError(
+                        f"OOD pool file not found: {pool_path}. "
+                        f"Generate it by running dataset_generator.py with OOD_POOL_MODE=True."
+                    )
+                pool_records.extend(read_json(pool_path))
+
+            available_tasks = sorted({r["task"] for r in pool_records})
+            if ood_task not in available_tasks:
+                raise ValueError(
+                    f"ood_task '{ood_task}' not found in pool. Available tasks: {available_tasks}"
+                )
+
+            train_records = filter_records_by_task(pool_records, exclude_task=ood_task)
+            val_records, test_records = split_holdout_task(pool_records, ood_task)
+            print(f"[LOTO] held-out task : {ood_task}")
+            print(f"[LOTO] train tasks   : {sorted({r['task'] for r in train_records})}")
+            print(f"[LOTO] sample counts : train={len(train_records)} "
+                  f"val={len(val_records)} test={len(test_records)}")
+
+            if cfg.dataset.dataset_config == "meta-icl":
+                train_dataset = MetaICLDataset._from_records(train_records, k=cfg.dataset.n_examples)
+                val_dataset   = MetaICLDataset._from_records(val_records, k=cfg.dataset.n_examples)
+            elif cfg.dataset.dataset_config == "baseline":
+                train_dataset = BaselineDataset._from_records(train_records)
+                val_dataset   = BaselineDataset._from_records(val_records)
             else:
-                raise FileNotFoundError(f"File not found: {current_path}")
-        
-        if cfg.dataset.dataset_config == "meta-icl":
-            train_dataset = MetaICLDataset(paths["train"], k=cfg.dataset.n_examples)
-            val_dataset   = MetaICLDataset(paths["val"], k=cfg.dataset.n_examples)
-        elif cfg.dataset.dataset_config == "baseline":
-            train_dataset = BaselineDataset(paths["train"])
-            val_dataset   = BaselineDataset(paths["val"])
+                raise ValueError(f"Unknown dataset config: {cfg.dataset.dataset_config}")
         else:
-            raise ValueError(f"Unknown dataset config: {cfg.dataset.dataset_config}")
+            paths = {}
+            for split in ["train", "val", "test"]:
+                current_path = os.path.join(BASE_DIR, "graphqa",
+                                            f"{cfg.dataset.dataset_config}",
+                                            f"{cfg.dataset.test_type}",
+                                            f"{split}.json")
+                if os.path.exists(current_path):
+                    paths[split] = current_path
+                else:
+                    raise FileNotFoundError(f"File not found: {current_path}")
+
+            if cfg.dataset.dataset_config == "meta-icl":
+                train_dataset = MetaICLDataset(paths["train"], k=cfg.dataset.n_examples)
+                val_dataset   = MetaICLDataset(paths["val"], k=cfg.dataset.n_examples)
+            elif cfg.dataset.dataset_config == "baseline":
+                train_dataset = BaselineDataset(paths["train"])
+                val_dataset   = BaselineDataset(paths["val"])
+            else:
+                raise ValueError(f"Unknown dataset config: {cfg.dataset.dataset_config}")
 
         model = MetaICL(cfg)
         collator = make_collator(
