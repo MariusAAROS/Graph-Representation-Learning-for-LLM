@@ -1,6 +1,7 @@
 import hydra
 from omegaconf import DictConfig
 import pytorch_lightning as pl
+import wandb
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from torch.utils.data import DataLoader
@@ -26,7 +27,12 @@ def train(cfg: DictConfig):
         logger_name = f"{cfg.logger.name}-ood-{ood_task}"
     else:
         logger_name = f"{cfg.logger.name}-{'id' if cfg.dataset.test_type == 'standard' else 'ood'}"
-    wandb_logger = WandbLogger(project=cfg.logger.project, name=logger_name)
+    wandb_logger = WandbLogger(
+        project=cfg.logger.project,
+        name=logger_name,
+        group=cfg.logger.name,   # group LOTO runs together for side-by-side comparison
+        reinit=True,             # force a new run per Hydra multirun job (same process)
+    )
     BASE_DIR = "data/"
     if cfg.dataset.name == "graphqa":
         if is_loto:
@@ -137,7 +143,10 @@ def train(cfg: DictConfig):
         accumulate_grad_batches=cfg.trainer.gradient_accumulation,
     )
 
-    trainer.fit(model, train_loader, val_loader)
+    try:
+        trainer.fit(model, train_loader, val_loader)
+    finally:
+        wandb.finish()   # close this run so the next multirun job starts a fresh one
 
 if __name__ == "__main__":
     train()
