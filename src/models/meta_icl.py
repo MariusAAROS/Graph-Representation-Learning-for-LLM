@@ -42,6 +42,9 @@ class MetaICL(pl.LightningModule):
         )
         os.makedirs(self._predictions_dir, exist_ok=True)
         self._val_buffer: list = []
+        # Per-task majority-class random baseline, cached after first epoch
+        # since the validation set is fixed across epochs.
+        self._task_baselines: dict = {}
 
     def training_step(self, batch):
         input_ids = batch["input_ids"]
@@ -95,6 +98,31 @@ class MetaICL(pl.LightningModule):
         accuracy = correct / total
         self.log("val/exact_match", accuracy, prog_bar=True)
 
+        # Decode labels once (reused for the baseline and the CSV dump).
+        for item in self._val_buffer:
+            item["decoded_label"] = self.tokenizer.decode(
+                item["label"], skip_special_tokens=True
+            )
+
+        # Per-task majority-class random baseline. For each task, this is the
+        # frequency of the most common answer, i.e. the accuracy of always
+        # predicting that answer. It gives a data-driven chance level that works
+        # for every task type: ~0.5 for balanced binary tasks (e.g. cycle_check)
+        # and a meaningful floor for numeric tasks (e.g. maximum_flow). Computed
+        # once and cached, since the validation set is fixed across epochs.
+        # Skip during the sanity-check pass: it only runs on a couple of batches,
+        # so the per-task label counts are degenerate (often a single answer,
+        # giving a bogus baseline of 1.0) and would be cached permanently.
+        if not self.trainer.sanity_checking and not self._task_baselines:
+            task_label_counts: dict = {}
+            for item in self._val_buffer:
+                task = item["task"] if item["task"] is not None else "unknown"
+                counts = task_label_counts.setdefault(task, {})
+                label = item["decoded_label"]
+                counts[label] = counts.get(label, 0) + 1
+            for task, counts in task_label_counts.items():
+                self._task_baselines[task] = max(counts.values()) / sum(counts.values())
+
         # Per-task exact-match accuracy (some tasks are harder than others)
         task_correct: dict = {}
         task_total: dict = {}
@@ -105,11 +133,14 @@ class MetaICL(pl.LightningModule):
                 task_correct[task] = task_correct.get(task, 0) + 1
         for task in sorted(task_total):
             task_acc = task_correct.get(task, 0) / task_total[task]
+            baseline = self._task_baselines.get(task, 0.0)
             self.log(f"val/exact_match_{task}", task_acc)
+            self.log(f"val/random_baseline_{task}", baseline)
             print(
                 f"[val] epoch {self.current_epoch} | task={task} | "
                 f"exact_match={task_acc:.4f} "
-                f"({task_correct.get(task, 0)}/{task_total[task]})"
+                f"({task_correct.get(task, 0)}/{task_total[task]}) | "
+                f"baseline={baseline:.4f}"
             )
         print(
             f"[val] epoch {self.current_epoch} | task=ALL | "
@@ -124,11 +155,10 @@ class MetaICL(pl.LightningModule):
             writer.writeheader()
             for item in self._val_buffer:
                 decoded_pred = self.tokenizer.decode(item["pred"], skip_special_tokens=True)
-                decoded_label = self.tokenizer.decode(item["label"], skip_special_tokens=True)
                 writer.writerow({
                     "task": item["task"],
                     "pred": decoded_pred,
-                    "label": decoded_label,
+                    "label": item["decoded_label"],
                     "loss": item["loss"],
                 })
         self._val_buffer.clear() 

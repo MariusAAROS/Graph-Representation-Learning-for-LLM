@@ -17,7 +17,7 @@ from src.datasets.loaders import (
 from src.models.meta_icl import MetaICL
 
 
-@hydra.main(config_path="configs", config_name="meta_icl.yaml", version_base="1.2")
+@hydra.main(config_path="configs", config_name="baseline.yaml", version_base="1.2")
 def train(cfg: DictConfig):
     ood_task = cfg.dataset.get("ood_task", None)
     is_loto = cfg.dataset.test_type == "ood" and ood_task is not None
