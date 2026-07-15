@@ -4,7 +4,9 @@ dataset:
   name: graphqa
   test_type: standard # ood, standard
   dataset_config: "meta-icl"
-  ood_task: null                    # LOTO: name of held-out task (e.g. CycleCheck). null = use pre-split files
+  ood_task: ShortestPath                    # LOTO: CycleCheck, EdgeExistence, NodeCount, NodeDegree, EdgeCount, ConnectedNodes, 
+                                    # DisconnectedNodes, Reachability, ShortestPath, 
+                                    # TriangleCounting, MaximumFlow
   batch_size: 8                       # episodes per outer step
   n_examples: 5                     # number of examples per sample
   num_workers: 1

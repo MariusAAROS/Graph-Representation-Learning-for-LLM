@@ -7,7 +7,6 @@ dataset:
   ood_task: ShortestPath                    # LOTO: CycleCheck, EdgeExistence, NodeCount, NodeDegree, EdgeCount, ConnectedNodes, 
                                     # DisconnectedNodes, Reachability, ShortestPath, 
                                     # TriangleCounting, MaximumFlow
-
   batch_size: 8                       # episodes per outer step
   n_examples: 5                     # number of examples per sample
   num_workers: 1
