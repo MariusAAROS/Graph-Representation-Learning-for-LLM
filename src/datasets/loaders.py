@@ -5,6 +5,7 @@ from torch.utils.data import (
     SequentialSampler
 )
 import json
+import os
 
 def read_json(path):
     with open(path, "r") as f:
@@ -106,6 +107,79 @@ class BaselineDataset(Dataset):
             "algorithm": r["algorithm"],
             "task": r["task"],
         }
+
+def build_graphqa_datasets(cfg, splits=("train", "val", "test"), base_dir="data/"):
+    """Build graphqa datasets for the requested splits from a Hydra config.
+
+    Encapsulates the LOTO vs standard/ood branching so that both the training
+    runner and the inference runner construct datasets identically.
+
+    - LOTO (test_type == "ood" and dataset.ood_task set): the held-out task is
+      excluded from train and split 50/50 into val + test; every other task
+      forms the train pool.
+    - Otherwise: read the pre-split {split}.json files under
+      data/graphqa/{dataset_config}/{test_type}/.
+
+    Returns a dict mapping each requested split name to its Dataset.
+    """
+    if cfg.dataset.name != "graphqa":
+        raise ValueError(f"Unknown dataset name: {cfg.dataset.name}")
+
+    dataset_config = cfg.dataset.dataset_config
+    ood_task = cfg.dataset.get("ood_task", None)
+    is_loto = cfg.dataset.test_type == "ood" and ood_task is not None
+
+    def _make(records, from_file=False, path=None):
+        if dataset_config == "meta-icl":
+            if from_file:
+                return MetaICLDataset(path, k=cfg.dataset.n_examples)
+            return MetaICLDataset._from_records(records, k=cfg.dataset.n_examples)
+        elif dataset_config == "baseline":
+            if from_file:
+                return BaselineDataset(path)
+            return BaselineDataset._from_records(records)
+        else:
+            raise ValueError(f"Unknown dataset config: {dataset_config}")
+
+    datasets = {}
+
+    if is_loto:
+        # Leave-one-task-out (LOTO): pool contains all tasks; hold out one.
+        pool_records = []
+        for split in ["train", "val", "test"]:
+            pool_path = os.path.join(base_dir, "graphqa", f"{dataset_config}",
+                                     "ood_pool", f"{split}.json")
+            if not os.path.exists(pool_path):
+                raise FileNotFoundError(
+                    f"OOD pool file not found: {pool_path}. "
+                    f"Generate it by running dataset_generator.py with OOD_POOL_MODE=True."
+                )
+            pool_records.extend(read_json(pool_path))
+
+        available_tasks = sorted({r["task"] for r in pool_records})
+        if ood_task not in available_tasks:
+            raise ValueError(
+                f"ood_task '{ood_task}' not found in pool. Available tasks: {available_tasks}"
+            )
+
+        val_records, test_records = split_holdout_task(pool_records, ood_task)
+        if "train" in splits:
+            train_records = filter_records_by_task(pool_records, exclude_task=ood_task)
+            datasets["train"] = _make(train_records)
+        if "val" in splits:
+            datasets["val"] = _make(val_records)
+        if "test" in splits:
+            datasets["test"] = _make(test_records)
+    else:
+        for split in splits:
+            current_path = os.path.join(base_dir, "graphqa", f"{dataset_config}",
+                                        f"{cfg.dataset.test_type}", f"{split}.json")
+            if not os.path.exists(current_path):
+                raise FileNotFoundError(f"File not found: {current_path}")
+            datasets[split] = _make(None, from_file=True, path=current_path)
+
+    return datasets
+
 
 def make_collator(tokenizer, max_length=1024, padding_side="right"):
     if not tokenizer.is_fast:
