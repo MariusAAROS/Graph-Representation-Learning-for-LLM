@@ -15,12 +15,14 @@ converted to a rank-based CDF in (0, 1], which the competence pacing function
 consumes directly.
 """
 
+import ast
 import glob
 import json
 import os
 import re
 
 import numpy as np
+import yaml
 
 # Match per-task metric keys like "val/exact_match_TriangleCounting" while
 # excluding the global "val/exact_match" (no task suffix).
@@ -33,7 +35,51 @@ def _read_json(path):
         return json.load(f)
 
 
-def parse_ood_task_metrics(wandb_dir="wandb"):
+def _read_run_config(files_dir):
+    """Load a wandb run's ``config.yaml`` into a plain dict.
+
+    wandb stores each hyperparameter as ``{key: {"value": <stringified repr>}}``;
+    the inner value is a Python-literal string (single quotes, ``None``), so it
+    is unwrapped with ``ast.literal_eval``. Returns ``{}`` if unavailable.
+    """
+    path = os.path.join(files_dir, "config.yaml")
+    if not os.path.exists(path):
+        return {}
+    try:
+        raw = yaml.safe_load(open(path)) or {}
+    except (yaml.YAMLError, OSError):
+        return {}
+    out = {}
+    for key, wrapped in raw.items():
+        value = wrapped.get("value") if isinstance(wrapped, dict) else wrapped
+        if isinstance(value, str):
+            try:
+                value = ast.literal_eval(value)
+            except (ValueError, SyntaxError):
+                pass
+        out[key] = value
+    return out
+
+
+def _reconstruct_run_name(files_dir):
+    """Rebuild a LOTO run's display name (``{logger.name}-ood-{ood_task}``).
+
+    Mirrors how the runners name leave-one-task-out runs, so runs can be
+    filtered by name without parsing the binary ``.wandb`` log. Training runs
+    keep ``logger.name == 'meta-icl'`` while raw/inference ablations become
+    ``meta-icl-raw``. Returns ``None`` if the name cannot be reconstructed.
+    """
+    cfg = _read_run_config(files_dir)
+    logger = cfg.get("logger") or {}
+    dataset = cfg.get("dataset") or {}
+    name = logger.get("name") if isinstance(logger, dict) else None
+    ood_task = dataset.get("ood_task") if isinstance(dataset, dict) else None
+    if not name or not ood_task:
+        return None
+    return f"{name}-ood-{ood_task}"
+
+
+def parse_ood_task_metrics(wandb_dir="wandb", run_name_prefix=None):
     """Aggregate per-task OOD exact-match / baseline from local wandb summaries.
 
     A run is treated as a leave-one-task-out (LOTO) OOD run when its summary
@@ -41,6 +87,10 @@ def parse_ood_task_metrics(wandb_dir="wandb"):
     LOTO run holds only the single held-out task, whereas a standard (in-domain)
     run logs a per-task key for every task. This lets us pick out OOD transfer
     scores without relying on run metadata.
+
+    ``run_name_prefix`` optionally restricts to runs whose reconstructed display
+    name starts with the given prefix (e.g. ``"meta-icl-ood-"`` selects the
+    trained meta-ICL LOTO runs and excludes ``baseline`` / ``*-raw`` ablations).
 
     Returns a dict: ``{task: {"exact_match": mean, "baseline": mean, "n": count}}``.
     """
@@ -69,6 +119,12 @@ def parse_ood_task_metrics(wandb_dir="wandb"):
         # LOTO heuristic: exactly one held-out task in this run's validation set.
         if len(exact_by_task) != 1:
             continue
+
+        # Optional filter on the reconstructed run display name.
+        if run_name_prefix is not None:
+            run_name = _reconstruct_run_name(os.path.dirname(path))
+            if run_name is None or not run_name.startswith(run_name_prefix):
+                continue
 
         task, exact = next(iter(exact_by_task.items()))
         baseline = baseline_by_task.get(task, 0.0)
@@ -126,17 +182,19 @@ def compute_task_difficulty(metrics, metric="gap"):
 
 
 def load_or_compute_task_difficulty(
-    cache_path, wandb_dir="wandb", metric="gap", force=False
+    cache_path, wandb_dir="wandb", metric="gap", force=False, run_name_prefix=None
 ):
     """Load cached per-task difficulty, or compute it from wandb and cache it.
 
     The cache is a JSON file mapping task name to difficulty in [0, 1]. Delete
     the file or pass ``force=True`` to recompute after new OOD runs.
+    ``run_name_prefix`` restricts which LOTO runs contribute (see
+    :func:`parse_ood_task_metrics`).
     """
     if cache_path and os.path.exists(cache_path) and not force:
         return _read_json(cache_path)
 
-    metrics = parse_ood_task_metrics(wandb_dir)
+    metrics = parse_ood_task_metrics(wandb_dir, run_name_prefix=run_name_prefix)
     difficulty = compute_task_difficulty(metrics, metric=metric)
 
     if cache_path:

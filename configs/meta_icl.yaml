@@ -48,6 +48,7 @@ curriculum:
   enabled: false                     # when false, training uses plain shuffling
   task_difficulty_source: ood        # ood | none (none = graph features only)
   task_difficulty_file: configs/curriculum/task_difficulty.json  # cache; auto-computed if missing
+  ood_run_name_prefix: meta-icl-ood- # only use wandb LOTO runs whose name starts with this (null = all runs)
   ood_difficulty_metric: raw         # raw (1 - exact_match) | gap (exact_match - baseline)
                                      # raw discriminates better when runs are near/under baseline (e.g. raw-model ablations)
   graph_features: [nnodes, nedges, density]

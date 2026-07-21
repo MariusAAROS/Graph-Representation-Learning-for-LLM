@@ -25,9 +25,16 @@ def main():
     parser.add_argument("--wandb-dir", default="wandb")
     parser.add_argument("--out", default="configs/curriculum/task_difficulty.json")
     parser.add_argument("--metric", choices=["gap", "raw"], default="gap")
+    parser.add_argument(
+        "--run-name-prefix",
+        default="meta-icl-ood-",
+        help="Only use LOTO runs whose reconstructed name starts with this "
+        "prefix. Pass an empty string to use all runs.",
+    )
     args = parser.parse_args()
 
-    metrics = parse_ood_task_metrics(args.wandb_dir)
+    prefix = args.run_name_prefix or None
+    metrics = parse_ood_task_metrics(args.wandb_dir, run_name_prefix=prefix)
     if not metrics:
         print(f"[warn] no LOTO OOD runs found under {args.wandb_dir!r}")
     difficulty = compute_task_difficulty(metrics, metric=args.metric)

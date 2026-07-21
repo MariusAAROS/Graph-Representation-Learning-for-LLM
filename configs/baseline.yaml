@@ -48,6 +48,7 @@ curriculum:
   enabled: true                     # when false, training uses plain shuffling
   task_difficulty_source: ood        # ood | none (none = graph features only)
   task_difficulty_file: configs/curriculum/task_difficulty.json  # cache; auto-computed if missing
+  ood_run_name_prefix: meta-icl-ood- # only use wandb LOTO runs whose name starts with this (null = all runs)
   ood_difficulty_metric: raw         # raw (1 - exact_match) | gap (exact_match - baseline)
                                      # raw discriminates better when runs are near/under baseline (e.g. raw-model ablations)
   graph_features: [nnodes, nedges, density]
@@ -55,7 +56,7 @@ curriculum:
   pacing: competence                 # competence-based (Platanios et al.)
   c0: 0.1                            # initial fraction of easiest data unlocked
   p: 2                              # 2 = sqrt schedule (longer on easy), 1 = linear
-  full_competence_fraction: 0.8      # reach full competence at 80% of training
+  full_competence_fraction: 0.4      # reach full competence at 40% of training
   diversity_weight: 0.5              # 0 = difficulty-faithful, 1 = task-balanced
   diversity_dims: [task]             # grouping for diversity: task and/or algorithm
   seed: 42

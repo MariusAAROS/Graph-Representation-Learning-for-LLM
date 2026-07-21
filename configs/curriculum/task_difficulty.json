@@ -1,13 +1,13 @@
 {
-  "ConnectedNodes": 0.8981233251558768,
-  "CycleCheck": 0.27077748771798893,
-  "DisconnectedNodes": 0.9115281499653607,
+  "ConnectedNodes": 0.8312499923347785,
+  "CycleCheck": 0.27499997687700617,
+  "DisconnectedNodes": 0.8437500016552804,
   "EdgeCount": 1.0,
-  "EdgeExistence": 0.0,
-  "MaximumFlow": 0.9597855234741997,
-  "NodeCount": 0.911528151713151,
-  "NodeDegree": 0.6675603188575011,
-  "Reachability": 0.28632708477663676,
-  "ShortestPath": 0.6981233202620638,
-  "TriangleCounting": 0.779624669225872
+  "EdgeExistence": 0.3124999885403665,
+  "MaximumFlow": 0.968749997071427,
+  "NodeCount": 0.7937499969695636,
+  "NodeDegree": 0.6437499829124131,
+  "Reachability": 0.0,
+  "ShortestPath": 0.7374999794745231,
+  "TriangleCounting": 0.6375000026993803
 }

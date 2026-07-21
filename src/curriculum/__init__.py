@@ -43,6 +43,7 @@ def build_curriculum(cfg, train_dataset, wandb_dir="wandb"):
             cache_path=cache_path,
             wandb_dir=wandb_dir,
             metric=cur.ood_difficulty_metric,
+            run_name_prefix=cur.get("ood_run_name_prefix", None),
         )
     else:
         task_difficulty = {}
