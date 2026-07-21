@@ -5,7 +5,8 @@ Curriculum Learning for Neural Machine Translation": a competence value
 ``c(t)`` grows from ``c0`` to 1 over training, and at step ``t`` only samples
 whose CDF-difficulty is ``<= c(t)`` are eligible. Eligible samples are drawn
 with replacement so the number of optimizer steps per epoch stays constant
-regardless of how much of the dataset is currently unlocked.
+regardless of how much of the dataset is currently unlocked (or, in
+``eligible_only`` mode, in a single pass so early epochs are short and grow).
 
 A diversity factor interpolates between difficulty-faithful uniform sampling and
 group-balanced sampling (by task, and optionally graph-generator family), so
@@ -34,6 +35,10 @@ class CompetenceCurriculumSampler(Sampler):
             samples; ``p=1`` is linear.
         diversity_weight: 0 = uniform over eligible samples (difficulty
             faithful); 1 = fully group-balanced. Values in between interpolate.
+        sampling: "with_replacement" draws ``num_samples`` eligible indices with
+            replacement (constant-length epochs, diversity-weighted).
+            "eligible_only" yields one shuffled pass over the unlocked pool
+            (no oversampling; epoch length grows with competence).
         seed: Base RNG seed; combined with the epoch for per-epoch shuffling.
     """
 
@@ -46,6 +51,7 @@ class CompetenceCurriculumSampler(Sampler):
         c0=0.1,
         p=2.0,
         diversity_weight=0.5,
+        sampling="with_replacement",
         seed=42,
     ):
         self.difficulty_cdf = np.asarray(difficulty_cdf, dtype=np.float64)
@@ -54,6 +60,7 @@ class CompetenceCurriculumSampler(Sampler):
         self.c0 = float(c0)
         self.p = float(p)
         self.diversity_weight = float(diversity_weight)
+        self.sampling = sampling
         self.seed = int(seed)
 
         # Encode group keys as integer ids for fast per-group aggregation.
@@ -104,11 +111,19 @@ class CompetenceCurriculumSampler(Sampler):
             # Always keep at least the single easiest sample available.
             eligible = np.array([int(np.argmin(self.difficulty_cdf))])
 
-        weights = self._sampling_weights(eligible)
-        probs = weights / weights.sum()
-
         rng = np.random.default_rng(self.seed + self.current_epoch)
-        chosen = rng.choice(eligible, size=self.num_samples, replace=True, p=probs)
+        if self.sampling == "eligible_only":
+            # One shuffled pass over the currently-unlocked pool: no oversampling
+            # of easy samples, and the epoch length grows as competence rises.
+            # diversity_weight is not applied in this mode (each sample once).
+            chosen = eligible.copy()
+            rng.shuffle(chosen)
+        else:  # "with_replacement": constant epoch length, diversity-weighted
+            weights = self._sampling_weights(eligible)
+            probs = weights / weights.sum()
+            chosen = rng.choice(
+                eligible, size=self.num_samples, replace=True, p=probs
+            )
 
         elig_groups = self.group_ids[chosen]
         self.last_group_counts = {
@@ -117,6 +132,10 @@ class CompetenceCurriculumSampler(Sampler):
         return iter(chosen.tolist())
 
     def __len__(self):
+        if self.sampling == "eligible_only":
+            c = self.competence(self.global_step)
+            eligible = np.where(self.difficulty_cdf <= c)[0]
+            return max(1, int(eligible.size))
         return self.num_samples
 
 

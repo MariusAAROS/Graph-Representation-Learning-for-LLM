@@ -301,3 +301,23 @@ def difficulty_to_cdf(difficulties):
         i = j + 1
     # (rank + 1) / n gives values in (0, 1], with the hardest sample at 1.0.
     return (ranks + 1.0) / n
+
+
+def within_group_cdf(difficulties, group_keys):
+    """Rank-based CDF computed *within each group* (e.g. per task).
+
+    Unlike :func:`difficulty_to_cdf` (a single global ranking), this ranks each
+    sample only against others in its group. Used for the ``diversity_scope:
+    global`` curriculum, where competence unlocks the easiest fraction of *every*
+    task simultaneously, so all tasks appear from step 0 while each task still
+    ramps easy-to-hard internally.
+    """
+    arr = np.asarray(difficulties, dtype=np.float64)
+    out = np.zeros_like(arr)
+    groups: dict = {}
+    for i, key in enumerate(group_keys):
+        groups.setdefault(key, []).append(i)
+    for indices in groups.values():
+        idx = np.asarray(indices)
+        out[idx] = difficulty_to_cdf(arr[idx])
+    return out

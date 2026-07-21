@@ -10,6 +10,7 @@ import os
 from .difficulty import (
     combined_sample_difficulty,
     difficulty_to_cdf,
+    within_group_cdf,
     load_or_compute_task_difficulty,
 )
 from .sampler import CompetenceCurriculumSampler, CurriculumCallback
@@ -56,7 +57,19 @@ def build_curriculum(cfg, train_dataset, wandb_dir="wandb"):
         alpha=cur.alpha_task_vs_graph,
         features=features,
     )
-    cdf = difficulty_to_cdf(sample_difficulty)
+
+    # Eligibility scope decides how competence unlocks samples:
+    #   - "eligible" (default): global ranking -> easiest samples overall unlock
+    #     first, so easy tasks appear before hard ones.
+    #   - "global": within-task ranking -> the easiest fraction of *every* task
+    #     unlocks together, so all tasks are present from step 0 and each ramps
+    #     easy->hard internally.
+    diversity_scope = cur.get("diversity_scope", "eligible")
+    if diversity_scope == "global":
+        task_keys = [r.get("task", "unknown") for r in records]
+        cdf = within_group_cdf(sample_difficulty, task_keys)
+    else:
+        cdf = difficulty_to_cdf(sample_difficulty)
 
     # 3. Diversity grouping keys (task, or task+algorithm).
     dims = list(cur.diversity_dims)
@@ -79,6 +92,7 @@ def build_curriculum(cfg, train_dataset, wandb_dir="wandb"):
         c0=cur.c0,
         p=cur.p,
         diversity_weight=cur.diversity_weight,
+        sampling=cur.get("sampling", "with_replacement"),
         seed=cur.get("seed", 42),
     )
     callback = CurriculumCallback(sampler, group_id_to_name=group_id_to_name)

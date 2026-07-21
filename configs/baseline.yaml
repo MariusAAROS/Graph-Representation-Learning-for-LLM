@@ -52,13 +52,15 @@ curriculum:
   ood_difficulty_metric: raw         # raw (1 - exact_match) | gap (exact_match - baseline)
                                      # raw discriminates better when runs are near/under baseline (e.g. raw-model ablations)
   graph_features: [nnodes, nedges, density]
-  alpha_task_vs_graph: 0.7           # weight of task (OOD) vs per-sample (graph) difficulty
+  alpha_task_vs_graph: 0.5         # weight of task (OOD) vs per-sample (graph) difficulty
   pacing: competence                 # competence-based (Platanios et al.)
   c0: 0.1                            # initial fraction of easiest data unlocked
   p: 2                              # 2 = sqrt schedule (longer on easy), 1 = linear
   full_competence_fraction: 0.4      # reach full competence at 40% of training
   diversity_weight: 0.5              # 0 = difficulty-faithful, 1 = task-balanced
   diversity_dims: [task]             # grouping for diversity: task and/or algorithm
+  diversity_scope: global          # eligible = easy tasks first | global = all tasks every epoch (easy->hard within task)
+  sampling: eligible_only         # with_replacement = constant-length epochs | eligible_only = one pass over unlocked pool (no oversampling)
   seed: 42
 
 logger:

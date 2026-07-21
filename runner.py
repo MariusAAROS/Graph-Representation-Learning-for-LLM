@@ -93,6 +93,13 @@ def train(cfg: DictConfig):
     if curriculum_callback is not None:
         callbacks.append(curriculum_callback)
 
+    # The "eligible_only" curriculum sampler yields a growing number of samples
+    # per epoch, so Lightning must re-query the dataloader length each epoch
+    # instead of caching the epoch-0 value.
+    reload_every = 0
+    if curriculum_enabled and cfg.curriculum.get("sampling", "with_replacement") == "eligible_only":
+        reload_every = 1
+
     trainer = pl.Trainer(
         max_epochs=cfg.trainer.max_epochs,
         precision=cfg.trainer.precision,
@@ -103,6 +110,7 @@ def train(cfg: DictConfig):
         val_check_interval=cfg.trainer.val_check_interval,
         gradient_clip_val=cfg.trainer.gradient_clip_val,
         accumulate_grad_batches=cfg.trainer.gradient_accumulation,
+        reload_dataloaders_every_n_epochs=reload_every,
     )
 
     try:
