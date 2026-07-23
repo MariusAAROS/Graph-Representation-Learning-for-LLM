@@ -31,14 +31,14 @@ inference:
   run_tag: "raw"          # label appended to the wandb run name to distinguish ablations
 
 trainer:
-  max_epochs: 10
+  max_epochs: 30
   precision: "bf16-mixed"
   accelerator: "auto"
   checkpoint_monitor: "val/exact_match"
   checkpoint_mode: "max"
-  early_stopping_monitor: "val/exact_match"
-  early_stopping_patience: 3
-  early_stopping_mode: "max"
+  early_stopping_monitor: "val/loss"
+  early_stopping_patience: 5
+  early_stopping_mode: "min"
   predictions_dir: "predictions"
   gradient_clip_val: 0
   val_check_interval: 1.0
@@ -52,7 +52,7 @@ curriculum:
   ood_difficulty_metric: raw         # raw (1 - exact_match) | gap (exact_match - baseline)
                                      # raw discriminates better when runs are near/under baseline (e.g. raw-model ablations)
   graph_features: [nnodes, nedges, density]
-  alpha_task_vs_graph: 0.5         # weight of task (OOD) vs per-sample (graph) difficulty
+  alpha_task_vs_graph: 0.0         # weight of task (OOD) vs per-sample (graph) difficulty
   pacing: competence                 # competence-based (Platanios et al.)
   c0: 0.1                            # initial fraction of easiest data unlocked
   p: 2                              # 2 = sqrt schedule (longer on easy), 1 = linear
@@ -60,7 +60,7 @@ curriculum:
   diversity_weight: 0.5              # 0 = difficulty-faithful, 1 = task-balanced
   diversity_dims: [task]             # grouping for diversity: task and/or algorithm
   diversity_scope: global          # eligible = easy tasks first | global = all tasks every epoch (easy->hard within task)
-  sampling: eligible_only         # with_replacement = constant-length epochs | eligible_only = one pass over unlocked pool (no oversampling)
+  sampling: with_replacement         # with_replacement = constant-length epochs | eligible_only = one pass over unlocked pool (no oversampling)
   seed: 42
 
 logger:
