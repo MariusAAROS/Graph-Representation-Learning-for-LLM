@@ -11,6 +11,7 @@ from src.datasets.loaders import (
     build_graphqa_datasets,
 )
 from src.models.meta_icl import MetaICL
+from src.models.hrm_text import HRMTextICL, make_hrm_collator
 from src.curriculum import build_curriculum
 
 
@@ -40,12 +41,23 @@ def train(cfg: DictConfig):
         print(f"[LOTO] sample counts : train={len(train_dataset)} "
               f"val={len(val_dataset)}")
 
-    model = MetaICL(cfg)
-    collator = make_collator(
-        tokenizer=AutoTokenizer.from_pretrained(cfg.model.name, use_fast=True),
-        max_length=cfg.model.max_seq_len,
-        padding_side="right"
-    )
+    arch = cfg.model.get("arch", "causal_lm")
+    tokenizer = AutoTokenizer.from_pretrained(cfg.model.name, use_fast=True)
+    if arch == "hrm_text":
+        model = HRMTextICL(cfg)
+        collator = make_hrm_collator(
+            tokenizer=tokenizer,
+            max_length=cfg.model.max_seq_len,
+            padding_side="right",
+            condition=cfg.model.get("condition", ""),
+        )
+    else:
+        model = MetaICL(cfg)
+        collator = make_collator(
+            tokenizer=tokenizer,
+            max_length=cfg.model.max_seq_len,
+            padding_side="right",
+        )
 
     # Curriculum learning: replace random shuffling with a competence-based
     # sampler that unlocks harder samples as training progresses, while keeping

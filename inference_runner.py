@@ -8,6 +8,7 @@ from transformers import AutoTokenizer
 
 from src.datasets.loaders import make_collator, build_graphqa_datasets
 from src.models.meta_icl import MetaICL
+from src.models.hrm_text import HRMTextICL, make_hrm_collator
 
 
 @hydra.main(config_path="configs", config_name="baseline.yaml", version_base="1.2")
@@ -51,18 +52,29 @@ def infer(cfg: DictConfig):
     # Tag logger.name so the model's predictions/ folder is distinguishable from
     # trained runs on disk (MetaICL derives its predictions dir from this name).
     cfg.logger.name = f"{cfg.logger.name}-{run_tag}"
+    arch = cfg.model.get("arch", "causal_lm")
+    ModelCls = HRMTextICL if arch == "hrm_text" else MetaICL
     if checkpoint_path:
         print(f"[infer] loading checkpoint: {checkpoint_path}")
-        model = MetaICL.load_from_checkpoint(checkpoint_path, config=cfg)
+        model = ModelCls.load_from_checkpoint(checkpoint_path, config=cfg)
     else:
         print("[infer] no checkpoint -> using raw (untrained) model as ablation")
-        model = MetaICL(cfg)
+        model = ModelCls(cfg)
 
-    collator = make_collator(
-        tokenizer=AutoTokenizer.from_pretrained(cfg.model.name, use_fast=True),
-        max_length=cfg.model.max_seq_len,
-        padding_side="right",
-    )
+    tokenizer = AutoTokenizer.from_pretrained(cfg.model.name, use_fast=True)
+    if arch == "hrm_text":
+        collator = make_hrm_collator(
+            tokenizer=tokenizer,
+            max_length=cfg.model.max_seq_len,
+            padding_side="right",
+            condition=cfg.model.get("condition", ""),
+        )
+    else:
+        collator = make_collator(
+            tokenizer=tokenizer,
+            max_length=cfg.model.max_seq_len,
+            padding_side="right",
+        )
 
     test_loader = DataLoader(
         test_dataset,
