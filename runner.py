@@ -11,6 +11,7 @@ from src.datasets.loaders import (
     build_graphqa_datasets,
 )
 from src.models.meta_icl import MetaICL
+from src.curriculum import build_curriculum
 
 
 @hydra.main(config_path="configs", config_name="baseline.yaml", version_base="1.2")
@@ -46,11 +47,24 @@ def train(cfg: DictConfig):
         padding_side="right"
     )
 
+    # Curriculum learning: replace random shuffling with a competence-based
+    # sampler that unlocks harder samples as training progresses, while keeping
+    # task diversity in each batch. Disabled by default (plain shuffling).
+    curriculum_enabled = cfg.get("curriculum", {}).get("enabled", False)
+    curriculum_sampler = None
+    curriculum_callback = None
+    if curriculum_enabled:
+        curriculum_sampler, curriculum_callback = build_curriculum(cfg, train_dataset)
+        print(f"[curriculum] enabled | total_steps_to_full_competence="
+              f"{curriculum_sampler.total_steps} | c0={curriculum_sampler.c0} "
+              f"p={curriculum_sampler.p} diversity={curriculum_sampler.diversity_weight}")
+
     # batch_size = n_tasks_per_batch: each item is one episode (one task)
     train_loader = DataLoader(
         train_dataset,
         batch_size=cfg.dataset.batch_size,
-        shuffle=True,
+        shuffle=curriculum_sampler is None,
+        sampler=curriculum_sampler,
         num_workers=cfg.dataset.num_workers,
         collate_fn=collator,
     )
@@ -75,16 +89,28 @@ def train(cfg: DictConfig):
         mode=cfg.trainer.early_stopping_mode,
     )
 
+    callbacks = [checkpoint_cb, early_stop_cb]
+    if curriculum_callback is not None:
+        callbacks.append(curriculum_callback)
+
+    # The "eligible_only" curriculum sampler yields a growing number of samples
+    # per epoch, so Lightning must re-query the dataloader length each epoch
+    # instead of caching the epoch-0 value.
+    reload_every = 0
+    if curriculum_enabled and cfg.curriculum.get("sampling", "with_replacement") == "eligible_only":
+        reload_every = 1
+
     trainer = pl.Trainer(
         max_epochs=cfg.trainer.max_epochs,
         precision=cfg.trainer.precision,
         accelerator=cfg.trainer.accelerator,
         logger=wandb_logger,
         log_every_n_steps=10,
-        callbacks=[checkpoint_cb, early_stop_cb],
+        callbacks=callbacks,
         val_check_interval=cfg.trainer.val_check_interval,
         gradient_clip_val=cfg.trainer.gradient_clip_val,
         accumulate_grad_batches=cfg.trainer.gradient_accumulation,
+        reload_dataloaders_every_n_epochs=reload_every,
     )
 
     try:

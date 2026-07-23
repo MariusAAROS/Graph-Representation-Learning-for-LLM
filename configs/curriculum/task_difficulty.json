@@ -1,0 +1,13 @@
+{
+  "ConnectedNodes": 0.8312499923347785,
+  "CycleCheck": 0.27499997687700617,
+  "DisconnectedNodes": 0.8437500016552804,
+  "EdgeCount": 1.0,
+  "EdgeExistence": 0.3124999885403665,
+  "MaximumFlow": 0.968749997071427,
+  "NodeCount": 0.7937499969695636,
+  "NodeDegree": 0.6437499829124131,
+  "Reachability": 0.0,
+  "ShortestPath": 0.7374999794745231,
+  "TriangleCounting": 0.6375000026993803
+}
