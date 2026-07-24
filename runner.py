@@ -1,3 +1,8 @@
+import os
+# Reduce CUDA caching-allocator fragmentation from variable-length batches.
+# Must be set before any CUDA context is created, hence before torch is imported.
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 import hydra
 from omegaconf import DictConfig
 import pytorch_lightning as pl

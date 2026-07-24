@@ -15,11 +15,40 @@ class MetaICL(pl.LightningModule):
             print(f"Warning: No pad_token found for {self.hparams.model.name}, setting pad_token to eos_token ({self.tokenizer.eos_token})")
         self.tokenizer.padding_side = "left"
         
-        self.model = AutoModelForCausalLM.from_pretrained(self.hparams.model.name)
+        load_dtype = getattr(self.hparams.model, "load_dtype", None)
+        torch_dtype = None
+        if load_dtype not in (None, "", "null", "float32", "fp32"):
+            torch_dtype = getattr(torch, load_dtype)
+        if torch_dtype is not None:
+            # transformers >=5 renamed `torch_dtype` to `dtype`; try the modern
+            # kwarg first and fall back for older versions.
+            try:
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    self.hparams.model.name, dtype=torch_dtype
+                )
+            except TypeError:
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    self.hparams.model.name, torch_dtype=torch_dtype
+                )
+        else:
+            self.model = AutoModelForCausalLM.from_pretrained(self.hparams.model.name)
         self.model.train()
         self.model.config.pad_token_id = self.tokenizer.pad_token_id
+        # KV cache is useless during teacher-forced training and conflicts with
+        # gradient checkpointing (HF disables it with a warning); turn it off so
+        # the HRM port cannot silently retain cache activations.
+        self.model.config.use_cache = False
         if getattr(self.hparams.model, "gradient_checkpointing", False):
             self.model.gradient_checkpointing_enable()
+            # The HRM-Text port may not honour enable(); verify it actually took
+            # effect so we don't silently pay full-activation memory.
+            if not getattr(self.model, "is_gradient_checkpointing", False):
+                print(
+                    "Warning: gradient_checkpointing requested but "
+                    f"{self.hparams.model.name} did not enable it "
+                    "(is_gradient_checkpointing is False); activations will not "
+                    "be checkpointed."
+                )
 
         lora_cfg = getattr(self.hparams, "lora", None)
         if lora_cfg is not None and getattr(lora_cfg, "enabled", False):
@@ -164,4 +193,35 @@ class MetaICL(pl.LightningModule):
         self._val_buffer.clear() 
 
     def configure_optimizers(self):
-        return torch.optim.AdamW(self.model.parameters(), lr=self.hparams.model.lr)
+        params = [p for p in self.model.parameters() if p.requires_grad]
+        lr = self.hparams.model.lr
+        name = getattr(self.hparams.model, "optimizer", "adamw")
+
+        if name in ("adamw_8bit", "paged_adamw_8bit"):
+            try:
+                import bitsandbytes as bnb
+            except ImportError:
+                print(
+                    f"Warning: optimizer '{name}' requested but bitsandbytes is "
+                    "not installed; falling back to torch.optim.AdamW."
+                )
+                return torch.optim.AdamW(params, lr=lr)
+
+            optim_cls = (
+                bnb.optim.PagedAdamW8bit
+                if name == "paged_adamw_8bit"
+                else bnb.optim.AdamW8bit
+            )
+            # 8-bit optimizer state on embeddings is a common source of
+            # instability; keep those layers in 32-bit optimizer state. The
+            # override is consulted lazily at the first step, so registering it
+            # before creating the optimizer is sufficient.
+            manager = bnb.optim.GlobalOptimManager.get_instance()
+            for module in self.model.modules():
+                if isinstance(module, torch.nn.Embedding):
+                    manager.register_module_override(
+                        module, "weight", {"optim_bits": 32}
+                    )
+            return optim_cls(params, lr=lr)
+
+        return torch.optim.AdamW(params, lr=lr)
