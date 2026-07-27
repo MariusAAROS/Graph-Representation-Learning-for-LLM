@@ -16,7 +16,7 @@
 
 module purge
 module load arch/a100
-module load pytorch-gpu/py3/2.3.0
+module load pytorch-gpu/py3/2.8.0
 source $WORK/Graph-Representation-Learning-for-LLM/.venv/bin/activate
 
 export HF_HOME=$WORK/hf_cache
