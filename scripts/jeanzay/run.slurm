@@ -2,7 +2,7 @@
 #SBATCH --job-name=grl_train
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
-#SBATCH --account=YOUR_PROJECT_ID@v100   # <-- replace, run `idracct` to find it
+#SBATCH --account=105511@v100   # <-- replace, run `idracct` to find it
 
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1              # 1 task = 1 GPU
