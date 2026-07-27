@@ -23,8 +23,8 @@ export HF_HOME=$WORK/hf_cache
 export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
 export WANDB_MODE=offline
-
 export TMPDIR=$JOBSCRATCH
+export NVTE_CUDA_INCLUDE_DIR=$CUDA_HOME/include
 
 cd $WORK/Graph-Representation-Learning-for-LLM
 srun python runner.py --config-name=baseline_1b
