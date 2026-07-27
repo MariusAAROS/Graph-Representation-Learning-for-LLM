@@ -27,4 +27,4 @@ export TMPDIR=$JOBSCRATCH
 export NVTE_CUDA_INCLUDE_DIR=$CUDA_HOME/include
 
 cd $WORK/Graph-Representation-Learning-for-LLM
-srun python runner.py --config-name=baseline_1b
+srun python runner.py --config-name=hrm_text
