@@ -14,8 +14,8 @@
 #SBATCH --qos=qos_gpu-dev                # dev queue: max 2h, fast scheduling
 
 module purge
-module load pytorch-gpu/py3/2.3.0
-source $WORK/venvs/grl/bin/activate
+module load arch/a100
+source $WORK/Graph-Representation-Learning-for-LLM/.venv/bin/activate
 
 # --- Offline mode (compute nodes have NO internet) ---
 export HF_HOME=$WORK/hf_cache
@@ -25,5 +25,5 @@ export WANDB_MODE=offline                # sync later from a login node with `wa
 
 export TMPDIR=$JOBSCRATCH
 
-cd $WORK/repositories/graph-representation-learning-for-llm
+cd $WORK/Graph-Representation-Learning-for-LLM
 srun python runner.py --config-name=baseline_1b
