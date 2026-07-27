@@ -2,12 +2,13 @@
 #SBATCH --job-name=grl_train
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
-#SBATCH --account=105511@a100   # <-- replace, run `idracct` to find it
+#SBATCH --account=105511@a100
+#SBATCH -C a100                          # route to A100 partition
 
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1              # 1 task = 1 GPU
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=10
+#SBATCH --cpus-per-task=8                # A100: max 8 cores/GPU (64 cores / 8 GPUs)
 #SBATCH --hint=nomultithread
 
 #SBATCH --time=01:00:00
@@ -15,13 +16,14 @@
 
 module purge
 module load arch/a100
+module load pytorch-gpu/py3/2.3.0        # keep loading a torch module too
 source $WORK/Graph-Representation-Learning-for-LLM/.venv/bin/activate
 
 # --- Offline mode (compute nodes have NO internet) ---
 export HF_HOME=$WORK/hf_cache
 export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
-export WANDB_MODE=offline                # sync later from a login node with `wandb sync`
+export WANDB_MODE=offline
 
 export TMPDIR=$JOBSCRATCH
 
