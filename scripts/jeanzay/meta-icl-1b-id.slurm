@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=grl_train
+#SBATCH --job-name=micl1b_id
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
 #SBATCH --account=axa@a100
@@ -28,11 +28,5 @@ export NVTE_CUDA_INCLUDE_DIR=$CUDA_HOME/include
 
 cd $WORK/Graph-Representation-Learning-for-LLM
 
-## ID 
-srun python runner.py --config-name=hrm_text
-
-## OOD - Complete
-## python runner.py -m --config-name=<config_name> dataset.ood_task=CycleCheck,EdgeExistence,NodeCount,NodeDegree,EdgeCount,ConnectedNodes,DisconnectedNodes,Reachability,ShortestPath,TriangleCounting,MaximumFlow
-
-## OOD - Top 3 Hardest tasks (based on CL competency score)
-## python runner.py -m --config-name=hrm_text dataset.ood_task=EdgeCount,DisconnectedNodes,MaximumFlow
+## Qwen2.5-1.5B baseline | meta-icl data | ID (standard)
+srun python runner.py --config-name=meta_icl_1b dataset.test_type=standard
