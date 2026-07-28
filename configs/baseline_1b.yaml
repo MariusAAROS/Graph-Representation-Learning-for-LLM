@@ -13,9 +13,9 @@ dataset:
   ood_task: ShortestPath  # LOTO: CycleCheck, EdgeExistence, NodeCount, NodeDegree, EdgeCount, ConnectedNodes,
                           # DisconnectedNodes, Reachability, ShortestPath,
                           # TriangleCounting, MaximumFlow
-  batch_size: 1                       # episodes per outer step (1B model -> smaller batch)
+  batch_size: 16                      # episodes per outer step (80GB A100 gpu_p5); eff. batch = 16 * 2 = 32
   n_examples: 5                     # number of examples per sample
-  num_workers: 1
+  num_workers: 8                      # feed the larger batches (gpu_p5 = 8 CPU cores/GPU on AMD Milan)
 
 model:
   name: "Qwen/Qwen2.5-1.5B"
@@ -23,9 +23,9 @@ model:
   lr: 5e-5
   max_seq_len: 1024
   max_new_tokens: 50
-  gradient_checkpointing: true
-  optimizer: paged_adamw_8bit        # adamw | adamw_8bit | paged_adamw_8bit (8-bit shrinks optimizer state ~4x)
-  load_dtype: bfloat16               # bfloat16 halves weight+grad memory; float32/null = default
+  gradient_checkpointing: false      # 80GB A100 has headroom; off = faster (trades memory for speed)
+  optimizer: adamw                   # adamw | adamw_8bit | paged_adamw_8bit (8-bit was a 12GB workaround)
+  load_dtype: bfloat16               # bfloat16 halves weight+grad memory; great throughput on A100; float32/null = default
 
 lora:
   enabled: false                     # match HRM's full-FT regime; set true on BOTH models if GPU-constrained
@@ -51,7 +51,7 @@ trainer:
   predictions_dir: "predictions"
   gradient_clip_val: 0
   val_check_interval: 1.0
-  gradient_accumulation: 32          # compensate for the smaller per-step batch
+  gradient_accumulation: 2           # eff. batch = batch_size(16) * 2 = 32 (unchanged vs 12GB config)
 
 curriculum:
   enabled: false                    # plain finetuning, matching HRM's setup for a fair comparison
