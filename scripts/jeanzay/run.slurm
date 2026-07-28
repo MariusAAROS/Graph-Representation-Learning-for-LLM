@@ -29,10 +29,10 @@ export NVTE_CUDA_INCLUDE_DIR=$CUDA_HOME/include
 cd $WORK/Graph-Representation-Learning-for-LLM
 
 ## ID 
-srun python runner.py --config-name=hrm_text
+## srun python runner.py --config-name=hrm_text
 
 ## OOD - Complete
 ## python runner.py -m --config-name=<config_name> dataset.ood_task=CycleCheck,EdgeExistence,NodeCount,NodeDegree,EdgeCount,ConnectedNodes,DisconnectedNodes,Reachability,ShortestPath,TriangleCounting,MaximumFlow
 
 ## OOD - Top 3 Hardest tasks (based on CL competency score)
-## python runner.py -m --config-name=<config_name> dataset.ood_task=EdgeCount,DisconnectedNodes,MaximumFlow
+python runner.py -m --config-name=hrm_text dataset.ood_task=EdgeCount,DisconnectedNodes,MaximumFlow
