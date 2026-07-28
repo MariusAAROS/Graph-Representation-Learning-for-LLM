@@ -2,7 +2,7 @@ config_name: hrm_text
 
 dataset:
   name: graphqa
-  test_type: standard # ood, standard
+  test_type: ood # ood, standard
   dataset_config: "baseline"
   ood_task: ShortestPath  # LOTO: CycleCheck, EdgeExistence, NodeCount, NodeDegree, EdgeCount, ConnectedNodes,
                           # DisconnectedNodes, Reachability, ShortestPath,
