@@ -29,8 +29,12 @@ export NVTE_CUDA_INCLUDE_DIR=$CUDA_HOME/include
 cd $WORK/Graph-Representation-Learning-for-LLM
 
 ## Qwen2.5-1.5B baseline | meta-icl data | OOD (LOTO sweep over held-out tasks)
+
+## One among Top 3 hardest tasks (based on CL competency score)
+srun python runner.py --config-name=meta_icl_1b dataset.test_type=ood dataset.ood_task=MaximumFlow
+
 ## Top 3 hardest tasks (based on CL competency score)
-srun python runner.py -m --config-name=meta_icl_1b dataset.test_type=ood dataset.ood_task=EdgeCount,DisconnectedNodes,MaximumFlow
+## srun python runner.py -m --config-name=meta_icl_1b dataset.test_type=ood dataset.ood_task=EdgeCount,DisconnectedNodes,MaximumFlow
 
 ## OOD - Complete (all 11 tasks)
 ## python runner.py -m --config-name=meta_icl_1b dataset.test_type=ood dataset.ood_task=CycleCheck,EdgeExistence,NodeCount,NodeDegree,EdgeCount,ConnectedNodes,DisconnectedNodes,Reachability,ShortestPath,TriangleCounting,MaximumFlow
