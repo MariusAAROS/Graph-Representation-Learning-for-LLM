@@ -1,10 +1,15 @@
 config_name: baseline_1b
 
+# _self_ first so configs/model/<name>.yaml wins on the keys it defines.
+defaults:
+  - _self_
+  - model: qwen2_5_1_5b
+
 # Fair, same-scale baseline for HRM-Text-1B: a pretrained ~1B standard
 # decoder-only transformer, finetuned through the plain causal_lm path
 # (MetaICL + make_collator). No custom model class or collator is needed --
 # the HRM-only PrefixLM envelope/token_type_ids logic does NOT apply here.
-# Qwen2.5-1.5B is chosen for tokenizer parity with sapientinc/HRM-Text-1B.
+# Swap the backbone with e.g. `model=llama3_2_1b` on the command line.
 
 dataset:
   name: graphqa
@@ -18,7 +23,7 @@ dataset:
   num_workers: 8                      # feed the larger batches (gpu_p5 = 8 CPU cores/GPU on AMD Milan)
 
 model:
-  name: "Qwen/Qwen2.5-1.5B"
+  # `name` and any per-model overrides come from configs/model/<name>.yaml.
   arch: causal_lm                    # selects MetaICL + standard causal collator in the runners
   lr: 5e-5
   max_seq_len: 1024
@@ -26,6 +31,7 @@ model:
   gradient_checkpointing: true       # keep ON: full-FT 1B + AdamW fp32 state is memory-heavy even on 80GB
   optimizer: adamw                   # adamw | adamw_8bit | paged_adamw_8bit (drop to *_8bit if still OOM)
   load_dtype: bfloat16               # bfloat16 halves weight+grad memory; great throughput on A100; float32/null = default
+  attn_implementation: null          # null = transformers default; "eager" required by Gemma-3
 
 lora:
   enabled: false                     # match HRM's full-FT regime; set true on BOTH models if GPU-constrained
@@ -33,7 +39,7 @@ lora:
   alpha: 16
   dropout: 0.05
   bias: "none"
-  target_modules: []                 # NOTE: "c_attn" is GPT-2-only; leave empty unless enabling LoRA on Qwen
+  target_modules: []                 # NOTE: "c_attn" is GPT-2-only; per-model values live in configs/model/
 
 inference:
   checkpoint_path: null   # null = raw untrained model (ablation); or path to a .ckpt
@@ -74,3 +80,4 @@ curriculum:
 logger:
   project: "Meta-ICL"
   name: "baseline-1b"
+  include_model_tag: true            # append the backbone slug so models don't share run/predictions names

@@ -11,8 +11,8 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --hint=nomultithread
 
-#SBATCH --time=02:00:00
-#SBATCH --qos=qos_gpu_a100-dev
+#SBATCH --time=20:00:00
+#SBATCH --qos=qos_gpu_a100-t3
 #SBATCH --array=0-10   # one job per LOTO held-out task
 
 module purge
@@ -29,10 +29,14 @@ export NVTE_CUDA_INCLUDE_DIR=$CUDA_HOME/include
 
 cd $WORK/Graph-Representation-Learning-for-LLM
 
-## Qwen2.5-1.5B baseline | baseline data | OOD (LOTO sweep over held-out tasks)
+## ~1B baseline | baseline data | OOD (LOTO sweep over held-out tasks)
+
+# Backbone to finetune; any file name in configs/model/ works.
+#   MODEL=llama3_2_1b sbatch scripts/jeanzay/baseline-1b-ood.slurm
+MODEL=${MODEL:-qwen2_5_1_5b}
 
 # Each array index finetunes with one task held out; runs in parallel, one GPU each.
 TASKS=(CycleCheck EdgeExistence NodeCount NodeDegree EdgeCount ConnectedNodes DisconnectedNodes Reachability ShortestPath TriangleCounting MaximumFlow)
 TASK=${TASKS[$SLURM_ARRAY_TASK_ID]}
 
-srun python runner.py --config-name=baseline_1b dataset.test_type=ood dataset.ood_task=$TASK
+srun python runner.py --config-name=baseline_1b model=$MODEL dataset.test_type=ood dataset.ood_task=$TASK

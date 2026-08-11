@@ -1,0 +1,11 @@
+# @package _global_
+
+model:
+  name: "Qwen/Qwen3-4B"
+  optimizer: paged_adamw_8bit
+
+dataset:
+  batch_size: 2
+
+trainer:
+  gradient_accumulation: 16     # eff. batch = 2 * 16 = 32, unchanged

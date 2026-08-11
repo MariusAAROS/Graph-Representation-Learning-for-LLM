@@ -11,8 +11,8 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --hint=nomultithread
 
-#SBATCH --time=02:00:00
-#SBATCH --qos=qos_gpu_a100-dev
+#SBATCH --time=20:00:00
+#SBATCH --qos=qos_gpu_a100-t3
 
 module purge
 module load arch/a100
@@ -28,5 +28,10 @@ export NVTE_CUDA_INCLUDE_DIR=$CUDA_HOME/include
 
 cd $WORK/Graph-Representation-Learning-for-LLM
 
-## Qwen2.5-1.5B baseline | meta-icl data | ID (standard)
-srun python runner.py --config-name=meta_icl_1b dataset.test_type=standard
+## ~1B baseline | meta-icl data | ID (standard)
+
+# Backbone to finetune; any file name in configs/model/ works.
+#   MODEL=llama3_2_1b sbatch scripts/jeanzay/meta-icl-1b-id.slurm
+MODEL=${MODEL:-qwen2_5_1_5b}
+
+srun python runner.py --config-name=meta_icl_1b model=$MODEL dataset.test_type=standard

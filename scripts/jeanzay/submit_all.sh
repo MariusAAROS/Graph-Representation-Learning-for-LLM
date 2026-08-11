@@ -7,6 +7,9 @@
 #   bash scripts/jeanzay/submit_all.sh 'hrm-*'      # only HRM jobs
 #   DRY_RUN=1 bash scripts/jeanzay/submit_all.sh    # validate only, don't submit
 #
+#   # sweep several backbones (configs/model/*.yaml) over the 1b scripts:
+#   MODELS="qwen2_5_1_5b llama3_2_1b mistral7b" bash scripts/jeanzay/submit_all.sh '*-1b-*'
+#
 # Each .slurm becomes its own SLURM job (own job ID + own log under logs/).
 
 set -euo pipefail
@@ -16,6 +19,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Optional glob to filter which scripts to submit (default: all).
 PATTERN="${1:-*}"
+
+# Backbones to sweep. Empty = submit each script once with its built-in default.
+MODELS="${MODELS:-}"
 
 # Logs are written to logs/%x_%j.out relative to the submission CWD.
 mkdir -p logs
@@ -31,12 +37,26 @@ fi
 
 echo "Found ${#scripts[@]} job script(s):"
 for f in "${scripts[@]}"; do echo "  - $(basename "$f")"; done
+[[ -n "$MODELS" ]] && echo "Sweeping models: $MODELS"
 echo
 
-for f in "${scripts[@]}"; do
+submit() {
   if [[ "${DRY_RUN:-0}" == "1" ]]; then
-    sbatch --test-only "$f"
+    sbatch --test-only "$@"
   else
-    sbatch "$f"
+    sbatch "$@"
+  fi
+}
+
+for f in "${scripts[@]}"; do
+  base="$(basename "$f" .slurm)"
+  # Only scripts that read $MODEL can be swept; the rest run once as-is.
+  if [[ -n "$MODELS" ]] && grep -q 'MODEL=${MODEL:-' "$f"; then
+    for m in $MODELS; do
+      submit --export=ALL,MODEL="$m" --job-name="${base}_${m}" "$f"
+    done
+  else
+    submit "$f"
   fi
 done
+

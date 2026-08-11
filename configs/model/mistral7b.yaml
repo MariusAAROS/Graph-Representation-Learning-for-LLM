@@ -1,0 +1,20 @@
+# @package _global_
+
+# Gated repo. Upper bound of the sweep. If the A100s turn out to be 80GB,
+# prefer full FT (lora.enabled=false) so every model shares one training
+# regime -- as configured here it is the only LoRA model, which must be
+# disclosed alongside the results.
+
+model:
+  name: "mistralai/Mistral-7B-v0.3"
+  optimizer: paged_adamw_8bit
+
+dataset:
+  batch_size: 2
+
+trainer:
+  gradient_accumulation: 16     # eff. batch = 2 * 16 = 32, unchanged
+
+lora:
+  enabled: true
+  target_modules: ["q_proj", "k_proj", "v_proj", "o_proj"]

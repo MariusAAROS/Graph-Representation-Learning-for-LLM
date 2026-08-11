@@ -14,6 +14,7 @@
 #   bash scripts/jeanzay/submit_ood_throttled.sh scripts/jeanzay/hrm-ood.slurm
 #   MAX_INFLIGHT=3 bash scripts/jeanzay/submit_ood_throttled.sh scripts/jeanzay/hrm-ood.slurm
 #   TASKS="MaximumFlow ShortestPath" bash scripts/jeanzay/submit_ood_throttled.sh scripts/jeanzay/hrm-ood.slurm
+#   MODEL=mistral7b bash scripts/jeanzay/submit_ood_throttled.sh scripts/jeanzay/baseline-1b-ood.slurm
 #   DRY_RUN=1 bash scripts/jeanzay/submit_ood_throttled.sh scripts/jeanzay/hrm-ood.slurm
 set -euo pipefail
 
@@ -23,6 +24,7 @@ SCRIPT="${1:?usage: submit_ood_throttled.sh <path/to/xxx-ood.slurm>}"
 MAX_INFLIGHT="${MAX_INFLIGHT:-2}"    # max jobs (pending+running) kept in the queue
 POLL_SECONDS="${POLL_SECONDS:-30}"   # how often to re-check the queue while throttled
 DRY_RUN="${DRY_RUN:-0}"
+MODEL="${MODEL:-}"                   # backbone from configs/model/ (empty = script default)
 
 # Canonical LOTO task order; the index is the SLURM array id the .slurm scripts expect.
 ALL_TASKS=(CycleCheck EdgeExistence NodeCount NodeDegree EdgeCount ConnectedNodes DisconnectedNodes Reachability ShortestPath TriangleCounting MaximumFlow)
@@ -43,6 +45,14 @@ done
 JOBNAME="$(sed -n 's/^#SBATCH --job-name=\(.*\)/\1/p' "$SCRIPT" | head -1)"
 [[ -n "$JOBNAME" ]] || { echo "Could not read --job-name from $SCRIPT" >&2; exit 1; }
 
+# Per-model job name so concurrent sweeps of the same script throttle separately.
+sbatch_extra=()
+if [[ -n "$MODEL" ]]; then
+  grep -q 'MODEL=${MODEL:-' "$SCRIPT" || { echo "$SCRIPT does not read \$MODEL" >&2; exit 1; }
+  JOBNAME="${JOBNAME}_${MODEL}"
+  sbatch_extra=(--export=ALL,MODEL="$MODEL" --job-name="$JOBNAME")
+fi
+
 mkdir -p logs
 
 inflight() {
@@ -52,6 +62,7 @@ inflight() {
 
 echo "Script      : $SCRIPT  (job-name: $JOBNAME)"
 echo "Tasks       : ${WANT[*]}"
+[[ -n "$MODEL" ]] && echo "Model       : $MODEL"
 echo "Max inflight: $MAX_INFLIGHT  (poll every ${POLL_SECONDS}s)"
 echo
 
@@ -61,9 +72,9 @@ for idx in "${indices[@]}"; do
     sleep "$POLL_SECONDS"
   done
   if [[ "$DRY_RUN" == "1" ]]; then
-    echo "[dry-run] sbatch --array=$idx $SCRIPT   # ${ALL_TASKS[$idx]}"
+    echo "[dry-run] sbatch ${sbatch_extra[*]:-} --array=$idx $SCRIPT   # ${ALL_TASKS[$idx]}"
   else
-    sbatch --array="$idx" "$SCRIPT"
+    sbatch "${sbatch_extra[@]}" --array="$idx" "$SCRIPT"
     echo "[submit] ${ALL_TASKS[$idx]} (index $idx)"
   fi
 done
