@@ -1,11 +1,13 @@
 # @package _global_
 
+# Halved batch only: 4B fp32 AdamW state is ~32GB, leaving less room for the
+# 151k-vocab logits than the smaller models have.
+
 model:
   name: "Qwen/Qwen3-4B"
-  optimizer: paged_adamw_8bit
 
 dataset:
-  batch_size: 2
+  batch_size: 4
 
 trainer:
-  gradient_accumulation: 16     # eff. batch = 2 * 16 = 32, unchanged
+  gradient_accumulation: 8      # eff. batch = 4 * 8 = 32, unchanged

@@ -1,14 +1,8 @@
 # @package _global_
 
 # Gated repo. The 262k-token vocabulary makes the embedding + LM head ~35% of
-# the parameters, so the batch is halved to stay inside the same memory budget.
+# the parameters and the logits tensor ~8x larger than the other models'.
 
 model:
   name: "google/gemma-3-1b-pt"
   attn_implementation: eager   # Google advises against sdpa when training Gemma-3
-
-dataset:
-  batch_size: 4
-
-trainer:
-  gradient_accumulation: 8     # eff. batch = 4 * 8 = 32, unchanged

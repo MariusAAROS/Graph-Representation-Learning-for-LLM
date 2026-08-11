@@ -1,20 +1,15 @@
 # @package _global_
 
-# Gated repo. Upper bound of the sweep. If the A100s turn out to be 80GB,
-# prefer full FT (lora.enabled=false) so every model shares one training
-# regime -- as configured here it is the only LoRA model, which must be
-# disclosed alongside the results.
+# Gated repo. Upper bound of the sweep, full FT like every other model:
+# fp32 AdamW state would be ~56GB at 7B, so the 8-bit optimizer is what keeps
+# it inside 80GB (bf16 weights 14 + grads 14 + 8-bit state 14 ~= 45GB).
 
 model:
   name: "mistralai/Mistral-7B-v0.3"
   optimizer: paged_adamw_8bit
 
 dataset:
-  batch_size: 2
+  batch_size: 4
 
 trainer:
-  gradient_accumulation: 16     # eff. batch = 2 * 16 = 32, unchanged
-
-lora:
-  enabled: true
-  target_modules: ["q_proj", "k_proj", "v_proj", "o_proj"]
+  gradient_accumulation: 8      # eff. batch = 4 * 8 = 32, unchanged

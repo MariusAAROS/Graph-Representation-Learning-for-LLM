@@ -1,13 +1,7 @@
 # @package _global_
 
 # Same family as the 1.5B reference, so the delta isolates the effect of scale.
+# Inherits the reference batch/optimizer settings unchanged (~42GB on 80GB).
 
 model:
   name: "Qwen/Qwen2.5-3B"
-  optimizer: paged_adamw_8bit   # fp32 AdamW state alone would be ~24GB at 3B
-
-dataset:
-  batch_size: 4
-
-trainer:
-  gradient_accumulation: 8      # eff. batch = 4 * 8 = 32, unchanged
