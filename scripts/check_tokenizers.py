@@ -16,7 +16,7 @@ import os
 import sys
 
 from hydra import compose, initialize_config_dir
-from transformers import AutoTokenizer
+from transformers import AutoConfig, AutoTokenizer
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -25,6 +25,16 @@ from src.datasets.loaders import build_graphqa_datasets, make_collator  # noqa: 
 CONFIG_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "configs"
 )
+
+
+def _context_window(name: str):
+    """Pretrained context length, or None. Gemma-3 nests it under text_config."""
+    hf_cfg = AutoConfig.from_pretrained(name)
+    for obj in (hf_cfg, getattr(hf_cfg, "text_config", None)):
+        n = getattr(obj, "max_position_embeddings", None)
+        if n:
+            return n
+    return None
 
 
 def check(model_file: str, config_name: str, n_samples: int) -> bool:
@@ -73,6 +83,17 @@ def check(model_file: str, config_name: str, n_samples: int) -> bool:
     p50 = lengths[len(lengths) // 2]
     p95 = lengths[int(len(lengths) * 0.95)]
     print(f"  prompt tokens: p50={p50} p95={p95} max={lengths[-1]} (max_seq_len={limit})")
+
+    ctx = _context_window(name)
+    print(f"  context window: {ctx if ctx else 'unknown'}")
+
+    coverage = " ".join(
+        f"{n}:{sum(1 for x in lengths if x <= n) / len(lengths):.0%}"
+        + ("" if ctx is None or n <= ctx else "(>ctx)")
+        for n in (1024, 2048, 4096, 8192)
+    )
+    print(f"  prompts fitting at  {coverage}")
+
     if over:
         print(f"  WARN: {over}/{len(lengths)} prompts truncated; raise model.max_seq_len")
 
