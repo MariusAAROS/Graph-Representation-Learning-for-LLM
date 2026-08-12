@@ -19,7 +19,7 @@ dataset:
   ood_task: ShortestPath  # LOTO: CycleCheck, EdgeExistence, NodeCount, NodeDegree, EdgeCount, ConnectedNodes,
                           # DisconnectedNodes, Reachability, ShortestPath,
                           # TriangleCounting, MaximumFlow
-  batch_size: 8                       # episodes per outer step (80GB A100 gpu_p5); eff. batch = 8 * 4 = 32
+  batch_size: 2                       # 4096-token prompts: eff. batch = 2 * 16 = 32, as in baseline_1b
   n_examples: 5                     # number of examples per sample
   num_workers: 8                      # feed the larger batches (gpu_p5 = 8 CPU cores/GPU on AMD Milan)
 
@@ -27,7 +27,7 @@ model:
   # `name` and any per-model overrides come from configs/model/<name>.yaml.
   arch: causal_lm                    # selects MetaICL + standard causal collator in the runners
   lr: 5e-5
-  max_seq_len: 1024
+  max_seq_len: 4096                  # ~96% of 5-shot prompts fit; at 1024 only ~20% did and truncation ate the examples
   max_new_tokens: 50
   gradient_checkpointing: true       # keep ON: full-FT 1B + AdamW fp32 state is memory-heavy even on 80GB
   optimizer: adamw                   # adamw | adamw_8bit | paged_adamw_8bit (drop to *_8bit if still OOM)
@@ -58,7 +58,7 @@ trainer:
   predictions_dir: "predictions"
   gradient_clip_val: 0
   val_check_interval: 1.0
-  gradient_accumulation: 4           # eff. batch = batch_size(8) * 4 = 32 (unchanged vs 12GB config)
+  gradient_accumulation: 16          # eff. batch = batch_size(2) * 16 = 32
 
 curriculum:
   enabled: false                    # plain finetuning, matching HRM's setup for a fair comparison
