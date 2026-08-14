@@ -5,3 +5,6 @@
 
 model:
   name: "Qwen/Qwen2.5-3B"
+
+trainer:
+  gradient_clip_val: 1.0        # unclipped bf16 training diverged at 7B; clip from 3B up

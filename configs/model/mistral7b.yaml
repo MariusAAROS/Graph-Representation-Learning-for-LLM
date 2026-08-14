@@ -3,7 +3,12 @@
 # Gated repo. Upper bound of the sweep, full FT like every other model:
 # fp32 AdamW state would be ~56GB at 7B, so the 8-bit optimizer is what keeps
 # it inside 80GB (bf16 weights 14 + grads 14 + 8-bit state 14 ~= 45GB).
+# Diverged to NaN on the first updates at lr 5e-5 with clipping off.
 
 model:
   name: "mistralai/Mistral-7B-v0.3"
   optimizer: paged_adamw_8bit
+  lr: 2e-5
+
+trainer:
+  gradient_clip_val: 1.0
