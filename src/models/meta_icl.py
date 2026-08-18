@@ -15,11 +15,48 @@ class MetaICL(pl.LightningModule):
             print(f"Warning: No pad_token found for {self.hparams.model.name}, setting pad_token to eos_token ({self.tokenizer.eos_token})")
         self.tokenizer.padding_side = "left"
         
-        self.model = AutoModelForCausalLM.from_pretrained(self.hparams.model.name)
+        load_dtype = getattr(self.hparams.model, "load_dtype", None)
+        torch_dtype = None
+        if load_dtype not in (None, "", "null", "float32", "fp32"):
+            torch_dtype = getattr(torch, load_dtype)
+
+        load_kwargs = {}
+        attn_impl = getattr(self.hparams.model, "attn_implementation", None)
+        if attn_impl not in (None, "", "null"):
+            load_kwargs["attn_implementation"] = attn_impl
+
+        if torch_dtype is not None:
+            # transformers >=5 renamed `torch_dtype` to `dtype`; try the modern
+            # kwarg first and fall back for older versions.
+            try:
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    self.hparams.model.name, dtype=torch_dtype, **load_kwargs
+                )
+            except TypeError:
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    self.hparams.model.name, torch_dtype=torch_dtype, **load_kwargs
+                )
+        else:
+            self.model = AutoModelForCausalLM.from_pretrained(
+                self.hparams.model.name, **load_kwargs
+            )
         self.model.train()
         self.model.config.pad_token_id = self.tokenizer.pad_token_id
+        # KV cache is useless during teacher-forced training and conflicts with
+        # gradient checkpointing (HF disables it with a warning); turn it off so
+        # the HRM port cannot silently retain cache activations.
+        self.model.config.use_cache = False
         if getattr(self.hparams.model, "gradient_checkpointing", False):
             self.model.gradient_checkpointing_enable()
+            # The HRM-Text port may not honour enable(); verify it actually took
+            # effect so we don't silently pay full-activation memory.
+            if not getattr(self.model, "is_gradient_checkpointing", False):
+                print(
+                    "Warning: gradient_checkpointing requested but "
+                    f"{self.hparams.model.name} did not enable it "
+                    "(is_gradient_checkpointing is False); activations will not "
+                    "be checkpointed."
+                )
 
         lora_cfg = getattr(self.hparams, "lora", None)
         if lora_cfg is not None and getattr(lora_cfg, "enabled", False):
@@ -103,6 +140,18 @@ class MetaICL(pl.LightningModule):
             item["decoded_label"] = self.tokenizer.decode(
                 item["label"], skip_special_tokens=True
             )
+            item["decoded_pred"] = self.tokenizer.decode(
+                item["pred"], skip_special_tokens=True
+            )
+
+        # Token-id equality above is tokenizer-dependent ("23" is one token for
+        # some backbones and two for others), so it is not comparable across
+        # models; this string-level variant is.
+        str_correct = sum(
+            1 for item in self._val_buffer
+            if item["decoded_pred"].strip() == item["decoded_label"].strip()
+        )
+        self.log("val/exact_match_str", str_correct / total)
 
         # Per-task majority-class random baseline. For each task, this is the
         # frequency of the most common answer, i.e. the accuracy of always
@@ -125,26 +174,33 @@ class MetaICL(pl.LightningModule):
 
         # Per-task exact-match accuracy (some tasks are harder than others)
         task_correct: dict = {}
+        task_str_correct: dict = {}
         task_total: dict = {}
         for item in self._val_buffer:
             task = item["task"] if item["task"] is not None else "unknown"
             task_total[task] = task_total.get(task, 0) + 1
             if torch.equal(item["pred"], item["label"]):
                 task_correct[task] = task_correct.get(task, 0) + 1
+            if item["decoded_pred"].strip() == item["decoded_label"].strip():
+                task_str_correct[task] = task_str_correct.get(task, 0) + 1
         for task in sorted(task_total):
             task_acc = task_correct.get(task, 0) / task_total[task]
+            task_str_acc = task_str_correct.get(task, 0) / task_total[task]
             baseline = self._task_baselines.get(task, 0.0)
             self.log(f"val/exact_match_{task}", task_acc)
+            self.log(f"val/exact_match_str_{task}", task_str_acc)
             self.log(f"val/random_baseline_{task}", baseline)
             print(
                 f"[val] epoch {self.current_epoch} | task={task} | "
                 f"exact_match={task_acc:.4f} "
                 f"({task_correct.get(task, 0)}/{task_total[task]}) | "
+                f"exact_match_str={task_str_acc:.4f} | "
                 f"baseline={baseline:.4f}"
             )
         print(
             f"[val] epoch {self.current_epoch} | task=ALL | "
-            f"exact_match={accuracy:.4f} ({correct}/{total})"
+            f"exact_match={accuracy:.4f} ({correct}/{total}) | "
+            f"exact_match_str={str_correct / total:.4f}"
         )
 
         # Save predictions to CSV
@@ -154,14 +210,44 @@ class MetaICL(pl.LightningModule):
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
             for item in self._val_buffer:
-                decoded_pred = self.tokenizer.decode(item["pred"], skip_special_tokens=True)
                 writer.writerow({
                     "task": item["task"],
-                    "pred": decoded_pred,
+                    "pred": item["decoded_pred"],
                     "label": item["decoded_label"],
                     "loss": item["loss"],
                 })
         self._val_buffer.clear() 
 
     def configure_optimizers(self):
-        return torch.optim.AdamW(self.model.parameters(), lr=self.hparams.model.lr)
+        params = [p for p in self.model.parameters() if p.requires_grad]
+        lr = self.hparams.model.lr
+        name = getattr(self.hparams.model, "optimizer", "adamw")
+
+        if name in ("adamw_8bit", "paged_adamw_8bit"):
+            try:
+                import bitsandbytes as bnb
+            except ImportError:
+                print(
+                    f"Warning: optimizer '{name}' requested but bitsandbytes is "
+                    "not installed; falling back to torch.optim.AdamW."
+                )
+                return torch.optim.AdamW(params, lr=lr)
+
+            optim_cls = (
+                bnb.optim.PagedAdamW8bit
+                if name == "paged_adamw_8bit"
+                else bnb.optim.AdamW8bit
+            )
+            # 8-bit optimizer state on embeddings is a common source of
+            # instability; keep those layers in 32-bit optimizer state. The
+            # override is consulted lazily at the first step, so registering it
+            # before creating the optimizer is sufficient.
+            manager = bnb.optim.GlobalOptimManager.get_instance()
+            for module in self.model.modules():
+                if isinstance(module, torch.nn.Embedding):
+                    manager.register_module_override(
+                        module, "weight", {"optim_bits": 32}
+                    )
+            return optim_cls(params, lr=lr)
+
+        return torch.optim.AdamW(params, lr=lr)

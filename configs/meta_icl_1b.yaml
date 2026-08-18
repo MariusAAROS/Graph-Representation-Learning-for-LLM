@@ -1,0 +1,84 @@
+config_name: meta-icl-1b
+
+# _self_ first so configs/model/<name>.yaml wins on the keys it defines.
+defaults:
+  - _self_
+  - model: qwen2_5_1_5b
+
+# Fair, same-scale Meta-ICL variant of the 1B baseline: a pretrained ~1B
+# standard decoder-only transformer, finetuned on the meta-icl (few-shot)
+# format through the plain causal_lm path (MetaICL + make_collator). No custom
+# model class or collator is needed -- the HRM-only PrefixLM envelope/
+# token_type_ids logic does NOT apply here. Mirror of baseline_1b.yaml
+# with dataset_config="meta-icl".
+
+dataset:
+  name: graphqa
+  test_type: standard # ood, standard
+  dataset_config: "meta-icl"
+  ood_task: ShortestPath  # LOTO: CycleCheck, EdgeExistence, NodeCount, NodeDegree, EdgeCount, ConnectedNodes,
+                          # DisconnectedNodes, Reachability, ShortestPath,
+                          # TriangleCounting, MaximumFlow
+  batch_size: 2                       # 4096-token prompts: eff. batch = 2 * 16 = 32, as in baseline_1b
+  n_examples: 5                     # number of examples per sample
+  num_workers: 8                      # feed the larger batches (gpu_p5 = 8 CPU cores/GPU on AMD Milan)
+
+model:
+  # `name` and any per-model overrides come from configs/model/<name>.yaml.
+  arch: causal_lm                    # selects MetaICL + standard causal collator in the runners
+  lr: 5e-5
+  max_seq_len: 4096                  # ~96% of 5-shot prompts fit; at 1024 only ~20% did and truncation ate the examples
+  max_new_tokens: 50
+  gradient_checkpointing: true       # keep ON: full-FT 1B + AdamW fp32 state is memory-heavy even on 80GB
+  optimizer: adamw                   # adamw | adamw_8bit | paged_adamw_8bit (drop to *_8bit if still OOM)
+  load_dtype: bfloat16               # bfloat16 halves weight+grad memory; great throughput on A100; float32/null = default
+  attn_implementation: null          # null = transformers default; "eager" required by Gemma-3
+
+lora:
+  enabled: false                     # match HRM's full-FT regime; set true on BOTH models if GPU-constrained
+  r: 8
+  alpha: 16
+  dropout: 0.05
+  bias: "none"
+  target_modules: []                 # NOTE: "c_attn" is GPT-2-only; per-model values live in configs/model/
+
+inference:
+  checkpoint_path: null   # null = raw untrained model (ablation); or path to a .ckpt
+  run_tag: "raw"          # label appended to the wandb run name to distinguish ablations
+
+trainer:
+  max_epochs: 30
+  precision: "bf16-mixed"
+  accelerator: "auto"
+  checkpoint_monitor: "val/exact_match"
+  checkpoint_mode: "max"
+  early_stopping_monitor: "val/loss"
+  early_stopping_patience: 5
+  early_stopping_mode: "min"
+  predictions_dir: "predictions"
+  gradient_clip_val: 0
+  val_check_interval: 1.0
+  gradient_accumulation: 16          # eff. batch = batch_size(2) * 16 = 32
+
+curriculum:
+  enabled: false                    # plain finetuning, matching HRM's setup for a fair comparison
+  task_difficulty_source: ood        # ood | none (none = graph features only)
+  task_difficulty_file: configs/curriculum/task_difficulty.json  # cache; auto-computed if missing
+  ood_run_name_prefix: meta-icl-ood- # only use wandb LOTO runs whose name starts with this (null = all runs)
+  ood_difficulty_metric: raw         # raw (1 - exact_match) | gap (exact_match - baseline)
+  graph_features: [nnodes, nedges, density]
+  alpha_task_vs_graph: 0.0         # weight of task (OOD) vs per-sample (graph) difficulty
+  pacing: competence                 # competence-based (Platanios et al.)
+  c0: 0.1                            # initial fraction of easiest data unlocked
+  p: 2                              # 2 = sqrt schedule (longer on easy), 1 = linear
+  full_competence_fraction: 0.4      # reach full competence at 40% of training
+  diversity_weight: 0.5              # 0 = difficulty-faithful, 1 = task-balanced
+  diversity_dims: [task]             # grouping for diversity: task and/or algorithm
+  diversity_scope: global          # eligible = easy tasks first | global = all tasks every epoch (easy->hard within task)
+  sampling: with_replacement         # with_replacement = constant-length epochs | eligible_only = one pass over unlocked pool (no oversampling)
+  seed: 42
+
+logger:
+  project: "Meta-ICL"
+  name: "meta-icl-1b"
+  include_model_tag: true            # append the backbone slug so models don't share run/predictions names

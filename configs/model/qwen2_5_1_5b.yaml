@@ -1,0 +1,8 @@
+# @package _global_
+
+# Reference baseline for HRM-Text-1B: chosen for tokenizer parity with
+# sapientinc/HRM-Text-1B. Inherits every other setting from the base config,
+# so results stay identical to the pre-model-group runs.
+
+model:
+  name: "Qwen/Qwen2.5-1.5B"

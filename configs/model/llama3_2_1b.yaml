@@ -1,0 +1,6 @@
+# @package _global_
+
+# Gated repo: accept the license on the Hub and `hf auth login` before caching.
+
+model:
+  name: "meta-llama/Llama-3.2-1B"
