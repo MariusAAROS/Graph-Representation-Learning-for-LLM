@@ -11,8 +11,8 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --hint=nomultithread
 
-#SBATCH --time=02:00:00
-#SBATCH --qos=qos_gpu_a100-dev
+#SBATCH --time=20:00:00
+#SBATCH --qos=qos_gpu_a100-t3
 
 module purge
 module load arch/a100

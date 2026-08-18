@@ -11,8 +11,8 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --hint=nomultithread
 
-#SBATCH --time=02:00:00
-#SBATCH --qos=qos_gpu_a100-dev
+#SBATCH --time=20:00:00
+#SBATCH --qos=qos_gpu_a100-t3
 #SBATCH --array=0-10   # one job per LOTO held-out task
 
 module purge

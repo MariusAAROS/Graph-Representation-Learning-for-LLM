@@ -18,6 +18,7 @@ from src.datasets.loaders import (
 from src.models.meta_icl import MetaICL
 from src.models.hrm_text import HRMTextICL, make_hrm_collator
 from src.curriculum import build_curriculum
+from src.utils import model_slug
 
 
 @hydra.main(config_path="configs", config_name="baseline.yaml", version_base="1.2")
@@ -25,14 +26,20 @@ def train(cfg: DictConfig):
     ood_task = cfg.dataset.get("ood_task", None)
     is_loto = cfg.dataset.test_type == "ood" and ood_task is not None
 
+    base_name = cfg.logger.name
+    if cfg.logger.get("include_model_tag", False):
+        base_name = f"{base_name}-{model_slug(cfg.model.name)}"
+        # MetaICL derives its predictions/ dir from this, so tag it too.
+        cfg.logger.name = base_name
+
     if is_loto:
-        logger_name = f"{cfg.logger.name}-ood-{ood_task}"
+        logger_name = f"{base_name}-ood-{ood_task}"
     else:
-        logger_name = f"{cfg.logger.name}-{'id' if cfg.dataset.test_type == 'standard' else 'ood'}"
+        logger_name = f"{base_name}-{'id' if cfg.dataset.test_type == 'standard' else 'ood'}"
     wandb_logger = WandbLogger(
         project=cfg.logger.project,
         name=logger_name,
-        group=cfg.logger.name,   # group LOTO runs together for side-by-side comparison
+        group=base_name,         # group LOTO runs together for side-by-side comparison
         reinit=True,             # force a new run per Hydra multirun job (same process)
     )
 

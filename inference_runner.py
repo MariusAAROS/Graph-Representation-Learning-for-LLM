@@ -9,6 +9,7 @@ from transformers import AutoTokenizer
 from src.datasets.loaders import make_collator, build_graphqa_datasets
 from src.models.meta_icl import MetaICL
 from src.models.hrm_text import HRMTextICL, make_hrm_collator
+from src.utils import model_slug
 
 
 @hydra.main(config_path="configs", config_name="baseline.yaml", version_base="1.2")
@@ -27,16 +28,20 @@ def infer(cfg: DictConfig):
     checkpoint_path = cfg.inference.get("checkpoint_path", None)
     run_tag = cfg.inference.get("run_tag", "raw")
 
+    base_name = cfg.logger.name
+    if cfg.logger.get("include_model_tag", False):
+        base_name = f"{base_name}-{model_slug(cfg.model.name)}"
+
     if is_loto:
-        logger_name = f"{cfg.logger.name}-{run_tag}-ood-{ood_task}"
+        logger_name = f"{base_name}-{run_tag}-ood-{ood_task}"
     else:
         suffix = "id" if cfg.dataset.test_type == "standard" else "ood"
-        logger_name = f"{cfg.logger.name}-{run_tag}-{suffix}"
+        logger_name = f"{base_name}-{run_tag}-{suffix}"
 
     wandb_logger = WandbLogger(
         project=cfg.logger.project,
         name=logger_name,
-        group=f"{cfg.logger.name}-{run_tag}",  # group ablation runs together
+        group=f"{base_name}-{run_tag}",  # group ablation runs together
         reinit=True,
     )
 
@@ -51,7 +56,7 @@ def infer(cfg: DictConfig):
     # Load a trained checkpoint, or fall back to the raw (untrained) model.
     # Tag logger.name so the model's predictions/ folder is distinguishable from
     # trained runs on disk (MetaICL derives its predictions dir from this name).
-    cfg.logger.name = f"{cfg.logger.name}-{run_tag}"
+    cfg.logger.name = f"{base_name}-{run_tag}"
     arch = cfg.model.get("arch", "causal_lm")
     ModelCls = HRMTextICL if arch == "hrm_text" else MetaICL
     if checkpoint_path:

@@ -1,0 +1,8 @@
+# @package _global_
+
+model:
+  name: "Qwen/Qwen3-4B"
+  lr: 2e-5                      # 5e-5 was tuned at 1.5B and is too hot at this scale
+
+trainer:
+  gradient_clip_val: 1.0

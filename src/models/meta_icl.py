@@ -19,19 +19,27 @@ class MetaICL(pl.LightningModule):
         torch_dtype = None
         if load_dtype not in (None, "", "null", "float32", "fp32"):
             torch_dtype = getattr(torch, load_dtype)
+
+        load_kwargs = {}
+        attn_impl = getattr(self.hparams.model, "attn_implementation", None)
+        if attn_impl not in (None, "", "null"):
+            load_kwargs["attn_implementation"] = attn_impl
+
         if torch_dtype is not None:
             # transformers >=5 renamed `torch_dtype` to `dtype`; try the modern
             # kwarg first and fall back for older versions.
             try:
                 self.model = AutoModelForCausalLM.from_pretrained(
-                    self.hparams.model.name, dtype=torch_dtype
+                    self.hparams.model.name, dtype=torch_dtype, **load_kwargs
                 )
             except TypeError:
                 self.model = AutoModelForCausalLM.from_pretrained(
-                    self.hparams.model.name, torch_dtype=torch_dtype
+                    self.hparams.model.name, torch_dtype=torch_dtype, **load_kwargs
                 )
         else:
-            self.model = AutoModelForCausalLM.from_pretrained(self.hparams.model.name)
+            self.model = AutoModelForCausalLM.from_pretrained(
+                self.hparams.model.name, **load_kwargs
+            )
         self.model.train()
         self.model.config.pad_token_id = self.tokenizer.pad_token_id
         # KV cache is useless during teacher-forced training and conflicts with
@@ -132,6 +140,18 @@ class MetaICL(pl.LightningModule):
             item["decoded_label"] = self.tokenizer.decode(
                 item["label"], skip_special_tokens=True
             )
+            item["decoded_pred"] = self.tokenizer.decode(
+                item["pred"], skip_special_tokens=True
+            )
+
+        # Token-id equality above is tokenizer-dependent ("23" is one token for
+        # some backbones and two for others), so it is not comparable across
+        # models; this string-level variant is.
+        str_correct = sum(
+            1 for item in self._val_buffer
+            if item["decoded_pred"].strip() == item["decoded_label"].strip()
+        )
+        self.log("val/exact_match_str", str_correct / total)
 
         # Per-task majority-class random baseline. For each task, this is the
         # frequency of the most common answer, i.e. the accuracy of always
@@ -154,26 +174,33 @@ class MetaICL(pl.LightningModule):
 
         # Per-task exact-match accuracy (some tasks are harder than others)
         task_correct: dict = {}
+        task_str_correct: dict = {}
         task_total: dict = {}
         for item in self._val_buffer:
             task = item["task"] if item["task"] is not None else "unknown"
             task_total[task] = task_total.get(task, 0) + 1
             if torch.equal(item["pred"], item["label"]):
                 task_correct[task] = task_correct.get(task, 0) + 1
+            if item["decoded_pred"].strip() == item["decoded_label"].strip():
+                task_str_correct[task] = task_str_correct.get(task, 0) + 1
         for task in sorted(task_total):
             task_acc = task_correct.get(task, 0) / task_total[task]
+            task_str_acc = task_str_correct.get(task, 0) / task_total[task]
             baseline = self._task_baselines.get(task, 0.0)
             self.log(f"val/exact_match_{task}", task_acc)
+            self.log(f"val/exact_match_str_{task}", task_str_acc)
             self.log(f"val/random_baseline_{task}", baseline)
             print(
                 f"[val] epoch {self.current_epoch} | task={task} | "
                 f"exact_match={task_acc:.4f} "
                 f"({task_correct.get(task, 0)}/{task_total[task]}) | "
+                f"exact_match_str={task_str_acc:.4f} | "
                 f"baseline={baseline:.4f}"
             )
         print(
             f"[val] epoch {self.current_epoch} | task=ALL | "
-            f"exact_match={accuracy:.4f} ({correct}/{total})"
+            f"exact_match={accuracy:.4f} ({correct}/{total}) | "
+            f"exact_match_str={str_correct / total:.4f}"
         )
 
         # Save predictions to CSV
@@ -183,10 +210,9 @@ class MetaICL(pl.LightningModule):
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
             for item in self._val_buffer:
-                decoded_pred = self.tokenizer.decode(item["pred"], skip_special_tokens=True)
                 writer.writerow({
                     "task": item["task"],
-                    "pred": decoded_pred,
+                    "pred": item["decoded_pred"],
                     "label": item["decoded_label"],
                     "loss": item["loss"],
                 })

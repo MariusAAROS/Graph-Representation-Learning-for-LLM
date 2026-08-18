@@ -1,0 +1,6 @@
+# @package _global_
+
+# Cheap low-end anchor for the parameter-scaling curve.
+
+model:
+  name: "Qwen/Qwen3-0.6B"

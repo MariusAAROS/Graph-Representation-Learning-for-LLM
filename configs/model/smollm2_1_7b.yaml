@@ -1,0 +1,6 @@
+# @package _global_
+
+# Fully open 1.7B (weights + data), no license gate.
+
+model:
+  name: "HuggingFaceTB/SmolLM2-1.7B"

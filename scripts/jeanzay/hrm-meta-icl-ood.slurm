@@ -11,8 +11,8 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --hint=nomultithread
 
-#SBATCH --time=02:00:00
-#SBATCH --qos=qos_gpu_a100-dev
+#SBATCH --time=20:00:00
+#SBATCH --qos=qos_gpu_a100-t3
 #SBATCH --array=0-10   # one job per LOTO held-out task
 
 module purge
@@ -35,4 +35,6 @@ cd $WORK/Graph-Representation-Learning-for-LLM
 TASKS=(CycleCheck EdgeExistence NodeCount NodeDegree EdgeCount ConnectedNodes DisconnectedNodes Reachability ShortestPath TriangleCounting MaximumFlow)
 TASK=${TASKS[$SLURM_ARRAY_TASK_ID]}
 
-srun python runner.py --config-name=hrm_text dataset.dataset_config=meta-icl dataset.test_type=ood dataset.ood_task=$TASK
+# 4096 = HRM's max_position_embeddings; matches meta_icl_1b so the comparison is like-for-like.
+srun python runner.py --config-name=hrm_text dataset.dataset_config=meta-icl dataset.test_type=ood dataset.ood_task=$TASK \
+  model.max_seq_len=4096 dataset.batch_size=2 trainer.gradient_accumulation=16

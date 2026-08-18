@@ -11,8 +11,8 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --hint=nomultithread
 
-#SBATCH --time=02:00:00
-#SBATCH --qos=qos_gpu_a100-dev
+#SBATCH --time=20:00:00
+#SBATCH --qos=qos_gpu_a100-t3
 
 module purge
 module load arch/a100
@@ -29,4 +29,6 @@ export NVTE_CUDA_INCLUDE_DIR=$CUDA_HOME/include
 cd $WORK/Graph-Representation-Learning-for-LLM
 
 ## HRM-Text 1B | meta-icl | ID (standard)
-srun python runner.py --config-name=hrm_text dataset.dataset_config=meta-icl dataset.test_type=standard
+# 4096 = HRM's max_position_embeddings; matches meta_icl_1b so the comparison is like-for-like.
+srun python runner.py --config-name=hrm_text dataset.dataset_config=meta-icl dataset.test_type=standard \
+  model.max_seq_len=4096 dataset.batch_size=2 trainer.gradient_accumulation=16
