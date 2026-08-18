@@ -1,9 +1,21 @@
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import LoraConfig, get_peft_model
-import os, csv
+import os, csv, re
 from datetime import datetime
 import pytorch_lightning as pl
 import torch
+
+
+def normalize_answer(text):
+    """Lowercase and drop articles, punctuation and redundant whitespace.
+
+    GraphQA answers are templated, but KQA Pro answers are free-form KB values, so
+    a trailing period or a leading "the" should not count as a wrong answer.
+    """
+    text = re.sub(r"[.,;:!?\"'`()\[\]]+", " ", text.lower())
+    text = re.sub(r"\b(a|an|the)\b", " ", text)
+    return " ".join(text.split())
+
 
 class MetaICL(pl.LightningModule):
     def __init__(self, config):
@@ -153,6 +165,12 @@ class MetaICL(pl.LightningModule):
         )
         self.log("val/exact_match_str", str_correct / total)
 
+        norm_correct = sum(
+            1 for item in self._val_buffer
+            if normalize_answer(item["decoded_pred"]) == normalize_answer(item["decoded_label"])
+        )
+        self.log("val/exact_match_norm", norm_correct / total)
+
         # Per-task majority-class random baseline. For each task, this is the
         # frequency of the most common answer, i.e. the accuracy of always
         # predicting that answer. It gives a data-driven chance level that works
@@ -175,6 +193,7 @@ class MetaICL(pl.LightningModule):
         # Per-task exact-match accuracy (some tasks are harder than others)
         task_correct: dict = {}
         task_str_correct: dict = {}
+        task_norm_correct: dict = {}
         task_total: dict = {}
         for item in self._val_buffer:
             task = item["task"] if item["task"] is not None else "unknown"
@@ -183,24 +202,30 @@ class MetaICL(pl.LightningModule):
                 task_correct[task] = task_correct.get(task, 0) + 1
             if item["decoded_pred"].strip() == item["decoded_label"].strip():
                 task_str_correct[task] = task_str_correct.get(task, 0) + 1
+            if normalize_answer(item["decoded_pred"]) == normalize_answer(item["decoded_label"]):
+                task_norm_correct[task] = task_norm_correct.get(task, 0) + 1
         for task in sorted(task_total):
             task_acc = task_correct.get(task, 0) / task_total[task]
             task_str_acc = task_str_correct.get(task, 0) / task_total[task]
+            task_norm_acc = task_norm_correct.get(task, 0) / task_total[task]
             baseline = self._task_baselines.get(task, 0.0)
             self.log(f"val/exact_match_{task}", task_acc)
             self.log(f"val/exact_match_str_{task}", task_str_acc)
+            self.log(f"val/exact_match_norm_{task}", task_norm_acc)
             self.log(f"val/random_baseline_{task}", baseline)
             print(
                 f"[val] epoch {self.current_epoch} | task={task} | "
                 f"exact_match={task_acc:.4f} "
                 f"({task_correct.get(task, 0)}/{task_total[task]}) | "
                 f"exact_match_str={task_str_acc:.4f} | "
+                f"exact_match_norm={task_norm_acc:.4f} | "
                 f"baseline={baseline:.4f}"
             )
         print(
             f"[val] epoch {self.current_epoch} | task=ALL | "
             f"exact_match={accuracy:.4f} ({correct}/{total}) | "
-            f"exact_match_str={str_correct / total:.4f}"
+            f"exact_match_str={str_correct / total:.4f} | "
+            f"exact_match_norm={norm_correct / total:.4f}"
         )
 
         # Save predictions to CSV
