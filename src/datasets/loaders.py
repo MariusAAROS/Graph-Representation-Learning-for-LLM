@@ -7,7 +7,7 @@ from torch.utils.data import (
 import json
 import os
 
-KNOWN_DATASETS = frozenset({"graphqa", "kqapro"})
+KNOWN_DATASETS = frozenset({"graphqa", "kqapro", "metaqa"})
 
 
 def read_json(path):
