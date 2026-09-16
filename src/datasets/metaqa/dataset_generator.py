@@ -30,12 +30,11 @@ from src.datasets.metaqa.question_types import derive_task, qtype_chain
 
 KB_PATH = "data/metaqa/kb.txt"
 DATA_DIR = "data/metaqa"
-OUTPUT_DIR = "data/metaqa-gold"
+OUTPUT_DIR = "data/metaqa"
 MODEL_TYPES = ["baseline", "meta-icl"]
 
 HOPS = [1, 2, 3]
-# STRATEGIES = ["gold", "retrieved"]
-STRATEGIES = ["gold"]
+STRATEGIES = ["gold", "retrieved"]
 MAX_TRIPLES = 80      # MetaQA triples are short (~12 tokens), so 80 fits in ~1000
 MAX_NODES = 200       # caps the retrieved ball before triples are selected
 N_TRAIN = 4000        # split evenly across the three hop levels
