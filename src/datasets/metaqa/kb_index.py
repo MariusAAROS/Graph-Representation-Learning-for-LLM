@@ -86,12 +86,16 @@ class KBIndex:
                 if rel == relation:
                     yield (subject, relation, node), subject
 
-    def chain_expand(self, seed, chain, answer):
+    def chain_expand(self, seed, chain, answers):
         """Walk the qtype chain from `seed`, keeping every edge traversed.
 
-        Returns (spine, core, chain_nodes) where `spine` is one complete
-        seed -> answer path and `core` is the remaining on-chain edges, or None if
-        the chain dies out or never reaches the answer.
+        Returns (spine, core, chain_nodes) where `spine` holds one complete
+        seed -> answer path per answer reached and `core` is the remaining on-chain
+        edges, or None if the chain dies out or reaches none of the answers.
+
+        Reaching only some of the answers is not an error here: the caller decides
+        what to do with a partially covered question, and its coverage report would
+        be blind to the case if it were dropped at this level.
         """
         if seed not in self.names:
             return None
@@ -107,19 +111,23 @@ class KBIndex:
                 return None
             if len(nxt) > MAX_FRONTIER:
                 keep = set(sorted(nxt)[:MAX_FRONTIER])
-                if answer in nxt:
-                    keep.add(answer)
+                keep.update(answer for answer in answers if answer in nxt)
                 nxt = {node: nxt[node] for node in keep}
             edges.extend(edge for other, edge in level_edges if other in nxt)
             levels.append(nxt)
 
-        if answer not in levels[-1]:
+        reached = [answer for answer in answers if answer in levels[-1]]
+        if not reached:
             return None
-        spine, node = [], answer
-        for level in reversed(levels[1:]):
-            parent, edge = level[node]
-            spine.append(edge)
-            node = parent
+        # Answer paths share a prefix near the seed, so they are merged, not concatenated.
+        spine = {}
+        for answer in reached:
+            node = answer
+            for level in reversed(levels[1:]):
+                parent, edge = level[node]
+                spine[edge] = None
+                node = parent
+        spine = list(spine)
 
         spine_set = set(spine)
         core = [edge for edge in edges if edge not in spine_set]
@@ -249,10 +257,13 @@ class KBIndex:
     def build_subgraph(self, record, strategy, max_triples, max_nodes, rng):
         """Serialize one question's subgraph under the given seeding `strategy`."""
         if strategy == "gold":
-            built = self.chain_expand(record["topic"], record["chain"], record["answer"])
+            built = self.chain_expand(record["topic"], record["chain"], record["answers"])
             if built is None:
                 return None
             spine, core, chain_nodes = built
+            # `serialize` would truncate the spine, silently losing an answer's evidence.
+            if len(spine) > max_triples:
+                return None
             on_chain = set(spine) | set(core)
             # On-chain content is capped so that most of the prompt is distraction,
             # matching the signal-to-noise ratio a k-hop ball produces on KQA Pro.
