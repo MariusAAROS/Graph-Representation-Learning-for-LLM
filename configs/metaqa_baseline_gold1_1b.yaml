@@ -1,0 +1,80 @@
+config_name: metaqa_gold1_baseline_1b
+
+# _self_ first so configs/model/<name>.yaml wins on the keys it defines.
+defaults:
+  - _self_
+  - model: qwen2_5_1_5b
+
+# Multi-answer counterpart of metaqa_baseline_1b.yaml, generated with
+#   python -m src.datasets.metaqa.dataset_generator \
+#       --answer-len 5 --interv 2 --output-dir data/metaqa-multi
+# Each question has 3-7 answers, emitted as a sorted "a | b | c" list, so whole-string
+# exact match is near-useless here -- read val/set_f1 and val/hits_at_1 instead.
+
+dataset:
+  name: metaqa-gold-1
+  test_type: standard # standard only; MetaQA has no LOTO split
+  dataset_config: "baseline"
+  batch_size: 8                       # episodes per outer step (80GB A100 gpu_p5); eff. batch = 8 * 4 = 32
+  n_examples: 5                     # number of examples per sample
+  num_workers: 8                      # feed the larger batches (gpu_p5 = 8 CPU cores/GPU on AMD Milan)
+
+model:
+  # `name` and any per-model overrides come from configs/model/<name>.yaml.
+  arch: causal_lm                    # selects MetaICL + standard causal collator in the runners
+  lr: 5e-5
+  max_seq_len: 2048                  # an 80-triple subgraph plus the question is ~1100 tokens
+  max_new_tokens: 100                # answer lists run to ~230 chars, roughly 4x a single answer
+  gradient_checkpointing: true       # keep ON: full-FT 1B + AdamW fp32 state is memory-heavy even on 80GB
+  optimizer: adamw                   # adamw | adamw_8bit | paged_adamw_8bit (drop to *_8bit if still OOM)
+  load_dtype: bfloat16               # bfloat16 halves weight+grad memory; great throughput on A100; float32/null = default
+  attn_implementation: null          # null = transformers default; "eager" required by Gemma-3
+
+lora:
+  enabled: false                     # match HRM's full-FT regime; set true on BOTH models if GPU-constrained
+  r: 8
+  alpha: 16
+  dropout: 0.05
+  bias: "none"
+  target_modules: []                 # NOTE: "c_attn" is GPT-2-only; per-model values live in configs/model/
+
+inference:
+  checkpoint_path: null   # null = raw untrained model (ablation); or path to a .ckpt
+  run_tag: "raw"          # label appended to the wandb run name to distinguish ablations
+
+trainer:
+  max_epochs: 30
+  precision: "bf16-mixed"
+  accelerator: "auto"
+  checkpoint_monitor: "val/set_f1"   # exact_match is all-or-nothing over the whole answer set
+  checkpoint_mode: "max"
+  early_stopping_monitor: "val/loss"
+  early_stopping_patience: 5
+  early_stopping_mode: "min"
+  predictions_dir: "predictions"
+  gradient_clip_val: 0
+  val_check_interval: 1.0
+  gradient_accumulation: 4           # eff. batch = batch_size(8) * 4 = 32
+
+curriculum:
+  enabled: false                     # set true to pace on subgraph size / hop count
+  task_difficulty_source: none       # none = per-sample features only; MetaQA has no LOTO runs
+  task_difficulty_file: configs/curriculum/task_difficulty.json  # unused while alpha is 0
+  ood_run_name_prefix: null
+  ood_difficulty_metric: raw
+  graph_features: [nnodes, nedges, nsteps, nanswers]   # nanswers: more answers = more to recover
+  alpha_task_vs_graph: 0.0           # weight of task (OOD) vs per-sample difficulty
+  pacing: competence                 # competence-based (Platanios et al.)
+  c0: 0.1                            # initial fraction of easiest data unlocked
+  p: 2                               # 2 = sqrt schedule (longer on easy), 1 = linear
+  full_competence_fraction: 0.4      # reach full competence at 40% of training
+  diversity_weight: 0.5              # 0 = difficulty-faithful, 1 = task-balanced
+  diversity_dims: [task]             # grouping for diversity: task and/or algorithm
+  diversity_scope: global            # eligible = easy tasks first | global = all tasks every epoch
+  sampling: with_replacement         # with_replacement = constant-length epochs | eligible_only = one pass
+  seed: 42
+
+logger:
+  project: "Meta-ICL"
+  name: "metaqa-gold1-baseline-1b"
+  include_model_tag: true            # append the backbone slug so models don't share run/predictions names
