@@ -1,0 +1,15 @@
+# @package _global_
+
+# 31.3B params = 62.5GB of bf16 weights, so full FT does NOT fit the 80GB A100
+# the slurm templates request; use --config-name=baseline_30b (LoRA) or run
+# inference-only. Ungated, unlike the Gemma-3 repos.
+
+model:
+  name: "google/gemma-4-31B"
+  text_only: true               # drops the 0.6B vision tower of this multimodal checkpoint
+  # attn_implementation stays at the base config's null (= sdpa): the eager
+  # requirement is a Gemma-2/3 attention-logit-softcapping artefact. Gemma-4
+  # only softcaps the final logits and Gemma4 declares sdpa/flash/flex support.
+
+trainer:
+  gradient_clip_val: 1.0        # unclipped bf16 training diverged at 7B
