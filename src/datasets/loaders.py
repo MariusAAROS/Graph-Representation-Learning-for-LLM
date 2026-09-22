@@ -7,6 +7,9 @@ from torch.utils.data import (
 import json
 import os
 
+KNOWN_DATASETS = frozenset({"graphqa", "kqapro", "metaqa", "metaqa-multi"})
+
+
 def read_json(path):
     with open(path, "r") as f:
         return json.load(f)
@@ -109,22 +112,24 @@ class BaselineDataset(Dataset):
         }
 
 def build_graphqa_datasets(cfg, splits=("train", "val", "test"), base_dir="data/"):
-    """Build graphqa datasets for the requested splits from a Hydra config.
+    """Build datasets for the requested splits from a Hydra config.
 
     Encapsulates the LOTO vs standard/ood branching so that both the training
     runner and the inference runner construct datasets identically.
 
     - LOTO (test_type == "ood" and dataset.ood_task set): the held-out task is
       excluded from train and split 50/50 into val + test; every other task
-      forms the train pool.
+      forms the train pool. Only graphqa has disjoint enough tasks for this.
     - Otherwise: read the pre-split {split}.json files under
-      data/graphqa/{dataset_config}/{test_type}/.
+      data/{name}/{dataset_config}/{test_type}/.
 
     Returns a dict mapping each requested split name to its Dataset.
     """
-    if cfg.dataset.name != "graphqa":
-        raise ValueError(f"Unknown dataset name: {cfg.dataset.name}")
+    if cfg.dataset.name not in KNOWN_DATASETS:
+        raise ValueError(f"Unknown dataset name: {cfg.dataset.name}. "
+                         f"Expected one of {sorted(KNOWN_DATASETS)}.")
 
+    dataset_name = cfg.dataset.name
     dataset_config = cfg.dataset.dataset_config
     ood_task = cfg.dataset.get("ood_task", None)
     is_loto = cfg.dataset.test_type == "ood" and ood_task is not None
@@ -147,7 +152,7 @@ def build_graphqa_datasets(cfg, splits=("train", "val", "test"), base_dir="data/
         # Leave-one-task-out (LOTO): pool contains all tasks; hold out one.
         pool_records = []
         for split in ["train", "val", "test"]:
-            pool_path = os.path.join(base_dir, "graphqa", f"{dataset_config}",
+            pool_path = os.path.join(base_dir, dataset_name, f"{dataset_config}",
                                      "ood_pool", f"{split}.json")
             if not os.path.exists(pool_path):
                 raise FileNotFoundError(
@@ -172,7 +177,7 @@ def build_graphqa_datasets(cfg, splits=("train", "val", "test"), base_dir="data/
             datasets["test"] = _make(test_records)
     else:
         for split in splits:
-            current_path = os.path.join(base_dir, "graphqa", f"{dataset_config}",
+            current_path = os.path.join(base_dir, dataset_name, f"{dataset_config}",
                                         f"{cfg.dataset.test_type}", f"{split}.json")
             if not os.path.exists(current_path):
                 raise FileNotFoundError(f"File not found: {current_path}")

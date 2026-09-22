@@ -1,9 +1,53 @@
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import LoraConfig, get_peft_model
-import os, csv
+import os, csv, re
 from datetime import datetime
 import pytorch_lightning as pl
 import torch
+
+
+def normalize_answer(text):
+    """Lowercase and drop articles, punctuation and redundant whitespace.
+
+    GraphQA answers are templated, but KQA Pro answers are free-form KB values, so
+    a trailing period or a leading "the" should not count as a wrong answer.
+    """
+    text = re.sub(r"[.,;:!?\"'`()\[\]]+", " ", text.lower())
+    text = re.sub(r"\b(a|an|the)\b", " ", text)
+    return " ".join(text.split())
+
+
+SET_METRICS = ("set_precision", "set_recall", "set_f1", "hits_at_1")
+
+# Matches ANSWER_SEP in the MetaQA generator; a comma would be ambiguous because
+# entity names contain commas.
+ANSWER_SEP = "|"
+
+
+def answer_list(text):
+    """Split a separator-joined answer string into normalized, non-empty elements.
+
+    Splitting must precede `normalize_answer`, which collapses punctuation.
+    """
+    parts = (normalize_answer(part) for part in text.strip().rstrip(".").split(ANSWER_SEP))
+    return [part for part in parts if part]
+
+
+def set_scores(pred, label):
+    """Precision / recall / F1 / hits@1 between two separator-joined answer lists.
+
+    Degenerates to exact_match_norm on single-answer datasets, so it is safe to log
+    everywhere.
+    """
+    gold, got = set(answer_list(label)), answer_list(pred)
+    if not gold:
+        return 0.0, 0.0, 0.0, 0.0
+    hit = len(gold & set(got))
+    precision = hit / len(got) if got else 0.0
+    recall = hit / len(gold)
+    f1 = 2 * precision * recall / (precision + recall) if hit else 0.0
+    return precision, recall, f1, float(bool(got) and got[0] in gold)
+
 
 class MetaICL(pl.LightningModule):
     def __init__(self, config):
@@ -153,6 +197,24 @@ class MetaICL(pl.LightningModule):
         )
         self.log("val/exact_match_str", str_correct / total)
 
+        norm_correct = sum(
+            1 for item in self._val_buffer
+            if normalize_answer(item["decoded_pred"]) == normalize_answer(item["decoded_label"])
+        )
+        self.log("val/exact_match_norm", norm_correct / total)
+
+        # Exact match over the whole string is all-or-nothing on multi-answer targets
+        # (MetaQA variants), where partial credit is the quantity of interest.
+        for item in self._val_buffer:
+            scores = set_scores(item["decoded_pred"], item["decoded_label"])
+            item.update(zip(SET_METRICS, scores))
+        set_means = {
+            key: sum(item[key] for item in self._val_buffer) / total
+            for key in SET_METRICS
+        }
+        for key, value in set_means.items():
+            self.log(f"val/{key}", value)
+
         # Per-task majority-class random baseline. For each task, this is the
         # frequency of the most common answer, i.e. the accuracy of always
         # predicting that answer. It gives a data-driven chance level that works
@@ -175,6 +237,8 @@ class MetaICL(pl.LightningModule):
         # Per-task exact-match accuracy (some tasks are harder than others)
         task_correct: dict = {}
         task_str_correct: dict = {}
+        task_norm_correct: dict = {}
+        task_set_sums: dict = {}
         task_total: dict = {}
         for item in self._val_buffer:
             task = item["task"] if item["task"] is not None else "unknown"
@@ -183,30 +247,47 @@ class MetaICL(pl.LightningModule):
                 task_correct[task] = task_correct.get(task, 0) + 1
             if item["decoded_pred"].strip() == item["decoded_label"].strip():
                 task_str_correct[task] = task_str_correct.get(task, 0) + 1
+            if normalize_answer(item["decoded_pred"]) == normalize_answer(item["decoded_label"]):
+                task_norm_correct[task] = task_norm_correct.get(task, 0) + 1
+            sums = task_set_sums.setdefault(task, dict.fromkeys(SET_METRICS, 0.0))
+            for key in SET_METRICS:
+                sums[key] += item[key]
         for task in sorted(task_total):
             task_acc = task_correct.get(task, 0) / task_total[task]
             task_str_acc = task_str_correct.get(task, 0) / task_total[task]
+            task_norm_acc = task_norm_correct.get(task, 0) / task_total[task]
+            task_set_means = {key: value / task_total[task]
+                              for key, value in task_set_sums[task].items()}
             baseline = self._task_baselines.get(task, 0.0)
             self.log(f"val/exact_match_{task}", task_acc)
             self.log(f"val/exact_match_str_{task}", task_str_acc)
+            self.log(f"val/exact_match_norm_{task}", task_norm_acc)
+            for key, value in task_set_means.items():
+                self.log(f"val/{key}_{task}", value)
             self.log(f"val/random_baseline_{task}", baseline)
             print(
                 f"[val] epoch {self.current_epoch} | task={task} | "
                 f"exact_match={task_acc:.4f} "
                 f"({task_correct.get(task, 0)}/{task_total[task]}) | "
                 f"exact_match_str={task_str_acc:.4f} | "
+                f"exact_match_norm={task_norm_acc:.4f} | "
+                f"set_f1={task_set_means['set_f1']:.4f} | "
+                f"hits@1={task_set_means['hits_at_1']:.4f} | "
                 f"baseline={baseline:.4f}"
             )
         print(
             f"[val] epoch {self.current_epoch} | task=ALL | "
             f"exact_match={accuracy:.4f} ({correct}/{total}) | "
-            f"exact_match_str={str_correct / total:.4f}"
+            f"exact_match_str={str_correct / total:.4f} | "
+            f"exact_match_norm={norm_correct / total:.4f} | "
+            f"set_f1={set_means['set_f1']:.4f} | "
+            f"hits@1={set_means['hits_at_1']:.4f}"
         )
 
         # Save predictions to CSV
         predictions_file = os.path.join(self._predictions_dir, f"predictions_epoch_{self.current_epoch}.csv")
         with open(predictions_file, "w", newline="") as csvfile:
-            fieldnames = ["task", "pred", "label", "loss"]
+            fieldnames = ["task", "pred", "label", "set_f1", "loss"]
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
             for item in self._val_buffer:
@@ -214,6 +295,7 @@ class MetaICL(pl.LightningModule):
                     "task": item["task"],
                     "pred": item["decoded_pred"],
                     "label": item["decoded_label"],
+                    "set_f1": item["set_f1"],
                     "loss": item["loss"],
                 })
         self._val_buffer.clear() 

@@ -212,6 +212,12 @@ def _graph_feature(record, feature):
         return nnodes
     if feature == "nedges":
         return nedges
+    if feature == "nsteps":
+        # KQA Pro only: KoPL program length, an a-priori difficulty signal.
+        return float(record.get("nsteps", 0) or 0)
+    if feature == "nanswers":
+        # MetaQA multi-answer variants: size of the gold answer set.
+        return float(record.get("nanswers", 0) or 0)
     if feature == "density":
         if nnodes < 2:
             return 0.0
