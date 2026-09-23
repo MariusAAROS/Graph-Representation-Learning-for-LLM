@@ -7,7 +7,7 @@ dataset:
   ood_task: ShortestPath  # LOTO: CycleCheck, EdgeExistence, NodeCount, NodeDegree, EdgeCount, ConnectedNodes,
                           # DisconnectedNodes, Reachability, ShortestPath,
                           # TriangleCounting, MaximumFlow
-  batch_size: 14                       # episodes per outer step (80GB A100 gpu_p5); eff. batch = 8 * 4 = 32
+  batch_size: 8                       # episodes per outer step (80GB A100 gpu_p5); eff. batch = 8 * 4 = 32
   n_examples: 5                     # number of examples per sample
   num_workers: 8                      # feed the larger batches (gpu_p5 = 8 CPU cores/GPU on AMD Milan)
 
@@ -46,7 +46,7 @@ trainer:
   predictions_dir: "predictions"
   gradient_clip_val: 0
   val_check_interval: 1.0
-  gradient_accumulation: 4           # eff. batch = batch_size(14) * 4 = 56 (unchanged vs 12GB config)
+  gradient_accumulation: 4           # eff. batch = batch_size(8) * 4 = 32 (unchanged vs 12GB config)
 
 curriculum:
   enabled: false                    # start with plain shuffling; enable once HRM training is stable
