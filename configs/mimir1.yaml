@@ -1,0 +1,71 @@
+config_name: mimir1
+
+dataset:
+  name: graphqa
+  test_type: ood # ood, standard
+  dataset_config: "baseline"
+  ood_task: ShortestPath  # LOTO: CycleCheck, EdgeExistence, NodeCount, NodeDegree, EdgeCount, ConnectedNodes,
+                          # DisconnectedNodes, Reachability, ShortestPath,
+                          # TriangleCounting, MaximumFlow
+  batch_size: 14                       # episodes per outer step (80GB A100 gpu_p5); eff. batch = 8 * 4 = 32
+  n_examples: 5                     # number of examples per sample
+  num_workers: 8                      # feed the larger batches (gpu_p5 = 8 CPU cores/GPU on AMD Milan)
+
+model:
+  name: "danish-foundation-models/DFM-Mimir"
+  arch: hrm_text                     # selects HRMTextICL + PrefixLM collator in the runners
+  condition: "<|object_ref_start|>"  # 'direct' mode (best for short-QA/classification); "" = none
+  lr: 5e-5
+  max_seq_len: 2048                 # baseline default; the meta-icl scripts raise this to 4096 (HRM's ceiling)
+  max_new_tokens: 50
+  gradient_checkpointing: true      # keep ON: full-FT 1B + AdamW fp32 state is memory-heavy even on 80GB
+  optimizer: adamw                  # adamw | adamw_8bit | paged_adamw_8bit (drop to *_8bit if still OOM)
+  load_dtype: bfloat16              # bfloat16 halves weight+grad memory; great throughput on A100; float32/null = default
+
+lora:
+  enabled: false
+  r: 8
+  alpha: 16
+  dropout: 0.05
+  bias: "none"
+  target_modules: []                 # NOTE: "c_attn" is GPT-2-only; set HRM attn module names if enabling
+
+inference:
+  checkpoint_path: null   # null = raw untrained model (ablation); or path to a .ckpt
+  run_tag: "raw"          # label appended to the wandb run name to distinguish ablations
+
+trainer:
+  max_epochs: 30
+  precision: "bf16-mixed"
+  accelerator: "auto"
+  checkpoint_monitor: "val/exact_match"
+  checkpoint_mode: "max"
+  early_stopping_monitor: "val/loss"
+  early_stopping_patience: 5
+  early_stopping_mode: "min"
+  predictions_dir: "predictions"
+  gradient_clip_val: 0
+  val_check_interval: 1.0
+  gradient_accumulation: 4           # eff. batch = batch_size(14) * 4 = 56 (unchanged vs 12GB config)
+
+curriculum:
+  enabled: false                    # start with plain shuffling; enable once HRM training is stable
+  task_difficulty_source: ood        # ood | none (none = graph features only)
+  task_difficulty_file: configs/curriculum/task_difficulty.json  # cache; auto-computed if missing
+  ood_run_name_prefix: meta-icl-ood- # only use wandb LOTO runs whose name starts with this (null = all runs)
+  ood_difficulty_metric: raw         # raw (1 - exact_match) | gap (exact_match - baseline)
+  graph_features: [nnodes, nedges, density]
+  alpha_task_vs_graph: 0.0         # weight of task (OOD) vs per-sample (graph) difficulty
+  pacing: competence                 # competence-based (Platanios et al.)
+  c0: 0.1                            # initial fraction of easiest data unlocked
+  p: 2                              # 2 = sqrt schedule (longer on easy), 1 = linear
+  full_competence_fraction: 0.4      # reach full competence at 40% of training
+  diversity_weight: 0.5              # 0 = difficulty-faithful, 1 = task-balanced
+  diversity_dims: [task]             # grouping for diversity: task and/or algorithm
+  diversity_scope: global          # eligible = easy tasks first | global = all tasks every epoch (easy->hard within task)
+  sampling: with_replacement         # with_replacement = constant-length epochs | eligible_only = one pass over unlocked pool (no oversampling)
+  seed: 42
+
+logger:
+  project: "Meta-ICL"
+  name: "mimir_v1"
