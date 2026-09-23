@@ -1,0 +1,83 @@
+config_name: baseline_30b
+
+# _self_ first so configs/model/<name>.yaml wins on the keys it defines.
+defaults:
+  - _self_
+  - model: gemma4_31b
+
+# LoRA counterpart of baseline_1b for the 31B backbone. 61GB of bf16 weights
+# leave no room for full-FT gradients + AdamW state on an 80GB A100, so the base
+# model is frozen and only the adapters train. Everything else mirrors
+# baseline_1b (data, prompt, effective batch, metrics) so the scaling comparison
+# stays apples-to-apples.
+
+dataset:
+  name: graphqa
+  test_type: standard # ood, standard
+  dataset_config: "baseline"
+  ood_task: ShortestPath  # LOTO: CycleCheck, EdgeExistence, NodeCount, NodeDegree, EdgeCount, ConnectedNodes,
+                          # DisconnectedNodes, Reachability, ShortestPath,
+                          # TriangleCounting, MaximumFlow
+  batch_size: 1                      # the 262k-token vocab makes the fp32 loss logits ~3GB per sample
+  n_examples: 5                      # number of examples per sample
+  num_workers: 4
+
+model:
+  # `name` and any per-model overrides come from configs/model/<name>.yaml.
+  arch: causal_lm
+  lr: 1e-4                           # LoRA needs a hotter lr than the 5e-5 full-FT baseline
+  max_seq_len: 2048
+  max_new_tokens: 50
+  gradient_checkpointing: true       # transformers defaults to use_reentrant=False, so it works with frozen weights
+  optimizer: adamw                   # adapter-only state is a few hundred MB; 8-bit buys nothing here
+  load_dtype: bfloat16
+  attn_implementation: null          # null = transformers default (sdpa)
+
+lora:
+  enabled: true
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  bias: "none"
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]  # Gemma-4 text stack
+
+inference:
+  checkpoint_path: null   # null = raw untrained model (ablation); or path to a .ckpt
+  run_tag: "raw"          # label appended to the wandb run name to distinguish ablations
+
+trainer:
+  max_epochs: 30
+  precision: "bf16-mixed"
+  accelerator: "auto"
+  checkpoint_monitor: "val/exact_match"
+  checkpoint_mode: "max"
+  early_stopping_monitor: "val/loss"
+  early_stopping_patience: 5
+  early_stopping_mode: "min"
+  predictions_dir: "predictions"
+  gradient_clip_val: 1.0
+  val_check_interval: 1.0
+  gradient_accumulation: 32          # eff. batch = batch_size(1) * 32 = 32, same as baseline_1b
+
+curriculum:
+  enabled: false                    # plain finetuning, matching HRM's setup for a fair comparison
+  task_difficulty_source: ood        # ood | none (none = graph features only)
+  task_difficulty_file: configs/curriculum/task_difficulty.json  # cache; auto-computed if missing
+  ood_run_name_prefix: meta-icl-ood- # only use wandb LOTO runs whose name starts with this (null = all runs)
+  ood_difficulty_metric: raw         # raw (1 - exact_match) | gap (exact_match - baseline)
+  graph_features: [nnodes, nedges, density]
+  alpha_task_vs_graph: 0.0         # weight of task (OOD) vs per-sample (graph) difficulty
+  pacing: competence                 # competence-based (Platanios et al.)
+  c0: 0.1                            # initial fraction of easiest data unlocked
+  p: 2                              # 2 = sqrt schedule (longer on easy), 1 = linear
+  full_competence_fraction: 0.4      # reach full competence at 40% of training
+  diversity_weight: 0.5              # 0 = difficulty-faithful, 1 = task-balanced
+  diversity_dims: [task]             # grouping for diversity: task and/or algorithm
+  diversity_scope: global          # eligible = easy tasks first | global = all tasks every epoch (easy->hard within task)
+  sampling: with_replacement         # with_replacement = constant-length epochs | eligible_only = one pass over unlocked pool (no oversampling)
+  seed: 42
+
+logger:
+  project: "Meta-ICL"
+  name: "baseline-30b"
+  include_model_tag: true            # append the backbone slug so models don't share run/predictions names

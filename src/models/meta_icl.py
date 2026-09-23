@@ -1,4 +1,4 @@
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
 from peft import LoraConfig, get_peft_model
 import os, csv, re
 from datetime import datetime
@@ -69,6 +69,18 @@ class MetaICL(pl.LightningModule):
         if attn_impl not in (None, "", "null"):
             load_kwargs["attn_implementation"] = attn_impl
 
+        if getattr(self.hparams.model, "text_only", False):
+            # Multimodal checkpoints (Gemma-4) build vision/audio towers that this
+            # task never feeds. The towers are only instantiated when their
+            # sub-config is not None, so nulling them skips the allocation, keeps
+            # their checkpoint shards unloaded, and stops LoRA from injecting
+            # adapters into modules that share the text stack's layer names.
+            hf_config = AutoConfig.from_pretrained(self.hparams.model.name)
+            for sub in ("vision_config", "audio_config"):
+                if getattr(hf_config, sub, None) is not None:
+                    setattr(hf_config, sub, None)
+            load_kwargs["config"] = hf_config
+
         if torch_dtype is not None:
             # transformers >=5 renamed `torch_dtype` to `dtype`; try the modern
             # kwarg first and fall back for older versions.
@@ -90,6 +102,9 @@ class MetaICL(pl.LightningModule):
         # gradient checkpointing (HF disables it with a warning); turn it off so
         # the HRM port cannot silently retain cache activations.
         self.model.config.use_cache = False
+        # Composite configs (Gemma-4) read use_cache from the text sub-config.
+        if getattr(self.model.config, "text_config", None) is not None:
+            self.model.config.text_config.use_cache = False
         if getattr(self.hparams.model, "gradient_checkpointing", False):
             self.model.gradient_checkpointing_enable()
             # The HRM-Text port may not honour enable(); verify it actually took
