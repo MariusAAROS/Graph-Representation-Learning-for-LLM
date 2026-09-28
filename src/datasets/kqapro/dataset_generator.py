@@ -6,10 +6,12 @@ unchanged. Each question is paired with a subgraph carved out of `kb.json`; the
 seeding strategy is recorded in `algorithm` so a single run yields a `gold` vs
 `retrieved` comparison in the prediction CSVs.
 
-Run from the repository root, once per MODEL_TYPE:
-    python -m src.datasets.kqapro.dataset_generator
+Run from the repository root, once per model type:
+    python -m src.datasets.kqapro.dataset_generator --model-type baseline
+    python -m src.datasets.kqapro.dataset_generator --model-type meta-icl
 """
 
+import argparse
 import json
 import os
 import random
@@ -95,7 +97,7 @@ def attach_examples(rows, bank, rng):
         row["example"] = [rng.choice(pool) for _ in range(N_EXAMPLES_PER_SAMPLE)]
 
 
-def main():
+def main(model_type=MODEL_TYPE):
     rng = random.Random(SEED)
     print(f"Loading KB from {KB_PATH} ...")
     kb = KBIndex(KB_PATH)
@@ -114,17 +116,17 @@ def main():
     split_rows = {split: build_rows(records, kb, rng, desc=f"subgraphs [{split}]")
                   for split, records in split_records.items()}
 
-    if MODEL_TYPE == "meta-icl":
+    if model_type == "meta-icl":
         bank = build_example_bank(train_records)
         for rows in split_rows.values():
             attach_examples(rows, bank, rng)
-    elif MODEL_TYPE != "baseline":
-        raise ValueError(f"Invalid MODEL_TYPE: {MODEL_TYPE}. Must be 'meta-icl' or 'baseline'.")
+    elif model_type != "baseline":
+        raise ValueError(f"Invalid model type: {model_type}. Must be 'meta-icl' or 'baseline'.")
 
     for split in SPLITS:
         rows = split_rows[split]
         data = [{"id": f"{split}_{i}", **row} for i, row in enumerate(rows)]
-        output_file = os.path.join(OUTPUT_DIR, MODEL_TYPE, "standard", f"{split}.json")
+        output_file = os.path.join(OUTPUT_DIR, model_type, "standard", f"{split}.json")
         os.makedirs(os.path.dirname(output_file), exist_ok=True)
         with open(output_file, "w") as f:
             json.dump(data, f, indent=4)
@@ -132,4 +134,6 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--model-type", choices=["baseline", "meta-icl"], default=MODEL_TYPE)
+    main(parser.parse_args().model_type)

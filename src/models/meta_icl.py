@@ -5,6 +5,9 @@ from datetime import datetime
 import pytorch_lightning as pl
 import torch
 
+# Registers the vendored Ouro port with the Auto* factories.
+import src.models.ouro  # noqa: F401
+
 
 def normalize_answer(text):
     """Lowercase and drop articles, punctuation and redundant whitespace.
