@@ -843,7 +843,7 @@ class MaximumFlow(GraphTask):
     name_dict = graph_text_encoders.get_tlag_node_encoder(None, encoding_method)
 
     for ind, graph in enumerate(graphs):
-      graph = add_edge_weight(graph)
+      graph = add_edge_weight(graph.copy())
       source, target = random.sample(list(graph.nodes()), k=2)
       question = graph_text_encoders.encode_graph(graph, encoding_method)
       task_description = (
@@ -870,7 +870,7 @@ class MaximumFlow(GraphTask):
   def create_few_shot_example(
       self, graph: nx.Graph, encoding_method: str, cot: bool
   ) -> str:
-    graph = add_edge_weight(graph)
+    graph = add_edge_weight(graph.copy())
     name_dict = graph_text_encoders.get_tlag_node_encoder(
         graph, encoding_method
     )

@@ -5,6 +5,7 @@ Two things silently break when swapping the backbone, and neither raises:
      offsets do not line up would train on the wrong span.
   2. truncation_side="left" drops few-shot examples once a prompt exceeds
      model.max_seq_len, and tokenizers differ a lot on graph text.
+It also prints how an edge list tokenizes (digit splitting), for reference.
 
 Run on a Jean Zay login node after scripts/jeanzay/fetch_models.sh:
     python scripts/check_tokenizers.py
@@ -83,6 +84,14 @@ def check(model_file: str, config_name: str, n_samples: int) -> bool:
     p50 = lengths[len(lengths) // 2]
     p95 = lengths[int(len(lengths) * 0.95)]
     print(f"  prompt tokens: p50={p50} p95={p95} max={lengths[-1]} (max_seq_len={limit})")
+
+    # 3. How node ids tokenize. Tokenizers that split digits (HRM-Text) spell a
+    # multi-digit node as several tokens, which matters for node co-reference
+    # and for the hrm_graph structure embeddings.
+    probe = "(0, 13) (10, 11)"
+    enc = tok(probe, add_special_tokens=False, return_offsets_mapping=True)
+    pieces = [probe[s:e] for s, e in enc["offset_mapping"]]
+    print(f"  edge tokens: {pieces} ({len(pieces)} tokens for 2 edges)")
 
     ctx = _context_window(name)
     print(f"  context window: {ctx if ctx else 'unknown'}")

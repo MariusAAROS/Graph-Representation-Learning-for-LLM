@@ -8,7 +8,12 @@ from transformers import AutoTokenizer
 
 from src.datasets.loaders import make_collator, build_graphqa_datasets
 from src.models.meta_icl import MetaICL
-from src.models.hrm_text import HRMTextICL, make_hrm_collator
+from src.models.hrm_text import (
+    HRMGraphICL,
+    HRMTextICL,
+    make_hrm_collator,
+    make_structure_fn,
+)
 from src.utils import model_slug
 
 
@@ -58,7 +63,7 @@ def infer(cfg: DictConfig):
     # trained runs on disk (MetaICL derives its predictions dir from this name).
     cfg.logger.name = f"{base_name}-{run_tag}"
     arch = cfg.model.get("arch", "causal_lm")
-    ModelCls = HRMTextICL if arch == "hrm_text" else MetaICL
+    ModelCls = {"hrm_text": HRMTextICL, "hrm_graph": HRMGraphICL}.get(arch, MetaICL)
     if checkpoint_path:
         print(f"[infer] loading checkpoint: {checkpoint_path}")
         model = ModelCls.load_from_checkpoint(checkpoint_path, config=cfg)
@@ -67,12 +72,13 @@ def infer(cfg: DictConfig):
         model = ModelCls(cfg)
 
     tokenizer = AutoTokenizer.from_pretrained(cfg.model.name, use_fast=True)
-    if arch == "hrm_text":
+    if arch in ("hrm_text", "hrm_graph"):
         collator = make_hrm_collator(
             tokenizer=tokenizer,
             max_length=cfg.model.max_seq_len,
             padding_side="right",
             condition=cfg.model.get("condition", ""),
+            structure_fn=make_structure_fn(cfg, train=False),
         )
     else:
         collator = make_collator(

@@ -16,13 +16,23 @@ from src.datasets.loaders import (
     build_graphqa_datasets,
 )
 from src.models.meta_icl import MetaICL
-from src.models.hrm_text import HRMTextICL, make_hrm_collator
+from src.models.hrm_text import (
+    HRMGraphICL,
+    HRMTextICL,
+    make_hrm_collator,
+    make_structure_fn,
+)
 from src.curriculum import build_curriculum
 from src.utils import model_slug
 
 
 @hydra.main(config_path="configs", config_name="baseline.yaml", version_base="1.2")
 def train(cfg: DictConfig):
+    # Optional top-level `seed` (e.g. `+seed=1`) for multi-seed comparisons. It
+    # seeds init, shuffling and dropout; the hrm_graph training permutations
+    # draw OS entropy by design (see GraphStructureFeaturizer).
+    if cfg.get("seed", None) is not None:
+        pl.seed_everything(cfg.seed, workers=True)
     ood_task = cfg.dataset.get("ood_task", None)
     is_loto = cfg.dataset.test_type == "ood" and ood_task is not None
 
@@ -55,13 +65,19 @@ def train(cfg: DictConfig):
 
     arch = cfg.model.get("arch", "causal_lm")
     tokenizer = AutoTokenizer.from_pretrained(cfg.model.name, use_fast=True)
-    if arch == "hrm_text":
-        model = HRMTextICL(cfg)
-        collator = make_hrm_collator(
-            tokenizer=tokenizer,
-            max_length=cfg.model.max_seq_len,
-            padding_side="right",
-            condition=cfg.model.get("condition", ""),
+    if arch in ("hrm_text", "hrm_graph"):
+        model = HRMGraphICL(cfg) if arch == "hrm_graph" else HRMTextICL(cfg)
+        # Train and val collators differ only for hrm_graph: training draws a
+        # fresh node permutation per example, validation a seeded one.
+        collator, val_collator = (
+            make_hrm_collator(
+                tokenizer=tokenizer,
+                max_length=cfg.model.max_seq_len,
+                padding_side="right",
+                condition=cfg.model.get("condition", ""),
+                structure_fn=make_structure_fn(cfg, train=train),
+            )
+            for train in (True, False)
         )
     else:
         model = MetaICL(cfg)
@@ -70,6 +86,7 @@ def train(cfg: DictConfig):
             max_length=cfg.model.max_seq_len,
             padding_side="right",
         )
+        val_collator = collator
 
     # Curriculum learning: replace random shuffling with a competence-based
     # sampler that unlocks harder samples as training progresses, while keeping
@@ -97,7 +114,7 @@ def train(cfg: DictConfig):
         batch_size=cfg.dataset.batch_size,
         shuffle=False,
         num_workers=cfg.dataset.num_workers,
-        collate_fn=collator,
+        collate_fn=val_collator,
     )
 
     checkpoint_cb = ModelCheckpoint(

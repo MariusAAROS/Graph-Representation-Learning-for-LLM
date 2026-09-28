@@ -1,8 +1,12 @@
 """Library for encoding graphs in text."""
 
+import random
+import zlib
+
 import networkx as nx
 
 from . import name_dictionaries
+from . import structure
 
 
 def create_node_string(name_dict, nnodes: int) -> str:
@@ -42,24 +46,59 @@ def nx_encoder(graph: nx.Graph, _: dict[int, str], edge_type="id") -> str:
 
 
 def adjacency_encoder(graph: nx.Graph, name_dict: dict[int, str]) -> str:
-  """Encoding a graph as entries of an adjacency matrix."""
+  """Encoding a graph as entries of an adjacency matrix.
+
+  Capacities are printed as a third tuple field when every edge carries a
+  ``weight`` (MaximumFlow); otherwise the task would be unanswerable from text.
+  """
+  weighted = graph.number_of_edges() > 0 and all(
+      "weight" in data for _, _, data in graph.edges(data=True)
+  )
+  tuple_fmt = "(i,j,c)" if weighted else "(i,j)"
+  capacity = " with capacity c" if weighted else ""
   if graph.is_directed():
     output = (
-        "In a directed graph, (i,j) means that there is an edge from node i to"
-        " node j. "
+        "In a directed graph, %s means that there is an edge from node i to"
+        " node j%s. " % (tuple_fmt, capacity)
     )
   else:
     output = (
-        "In an undirected graph, (i,j) means that node i and node j are"
-        " connected with an undirected edge. "
+        "In an undirected graph, %s means that node i and node j are"
+        " connected with an undirected edge%s. " % (tuple_fmt, capacity)
     )
   nodes_string = create_node_string(name_dict, len(graph.nodes()))
   output += "G describes a graph among nodes %s.\n" % nodes_string
   if graph.edges():
     output += "The edges in G are: "
-  for i, j in graph.edges():
-    output += "(%s, %s) " % (name_dict[i], name_dict[j])
+  for i, j, data in graph.edges(data=True):
+    if weighted:
+      output += "(%s, %s, %s) " % (name_dict[i], name_dict[j], data["weight"])
+    else:
+      output += "(%s, %s) " % (name_dict[i], name_dict[j])
   return output.strip() + ".\n"
+
+
+def _wl_line(graph: nx.Graph, name_dict: dict[int, str], shuffle: bool) -> str:
+  """Ordered 1-WL labels as text (L-OWL). ``shuffle`` permutes the labels
+  across nodes: same tokens, structure destroyed (control)."""
+  nodes = sorted(graph.nodes())
+  index = {v: k for k, v in enumerate(nodes)}
+  labels = structure.wl_labels(
+      len(nodes), [(index[u], index[v]) for u, v in graph.edges()]
+  )
+  if shuffle:
+    edge_key = ",".join("%s-%s" % e for e in sorted(graph.edges()))
+    random.Random(zlib.crc32(edge_key.encode())).shuffle(labels)
+  pairs = ", ".join("%s: %d" % (name_dict[v], labels[k]) for k, v in enumerate(nodes))
+  return "The structural labels of the nodes are: %s.\n" % pairs
+
+
+def adjacency_wl_encoder(graph: nx.Graph, name_dict: dict[int, str]) -> str:
+  return adjacency_encoder(graph, name_dict) + _wl_line(graph, name_dict, False)
+
+
+def adjacency_wl_shuf_encoder(graph: nx.Graph, name_dict: dict[int, str]) -> str:
+  return adjacency_encoder(graph, name_dict) + _wl_line(graph, name_dict, True)
 
 
 def friendship_encoder(graph: nx.Graph, name_dict: dict[int, str]) -> str:
@@ -179,7 +218,7 @@ def nodes_to_text(graph, encoding_type):
 
 def get_tlag_node_encoder(graph, encoder_name):
   """Find the node encoder used in the 'Talk Like a Graph' paper."""
-  if encoder_name == "adjacency":
+  if encoder_name in ("adjacency", "adjacency_wl", "adjacency_wl_shuf"):
     return nodes_to_text(graph, "integer")
   elif encoder_name == "incident":
     return nodes_to_text(graph, "integer")
@@ -208,6 +247,8 @@ def get_tlag_node_encoder(graph, encoder_name):
 # A dictionary from edge encoder name to the corresponding function.
 EDGE_ENCODER_FN = {
     "adjacency": adjacency_encoder,
+    "adjacency_wl": adjacency_wl_encoder,
+    "adjacency_wl_shuf": adjacency_wl_shuf_encoder,
     "incident": incident_encoder,
     "friendship": friendship_encoder,
     "south_park": friendship_encoder,

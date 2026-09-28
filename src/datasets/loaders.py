@@ -5,6 +5,8 @@ from torch.utils.data import (
     SequentialSampler
 )
 import json
+import numpy as np
+import torch
 import os
 
 KNOWN_DATASETS = frozenset({"graphqa", "kqapro", "metaqa", "metaqa-multi"})
@@ -134,12 +136,14 @@ def build_graphqa_datasets(cfg, splits=("train", "val", "test"), base_dir="data/
     ood_task = cfg.dataset.get("ood_task", None)
     is_loto = cfg.dataset.test_type == "ood" and ood_task is not None
 
+    # Variants such as "baseline-struct" or "meta-icl-wl" reuse the prompt format
+    # of their prefix.
     def _make(records, from_file=False, path=None):
-        if dataset_config == "meta-icl":
+        if dataset_config.startswith("meta-icl"):
             if from_file:
                 return MetaICLDataset(path, k=cfg.dataset.n_examples)
             return MetaICLDataset._from_records(records, k=cfg.dataset.n_examples)
-        elif dataset_config == "baseline":
+        elif dataset_config.startswith("baseline"):
             if from_file:
                 return BaselineDataset(path)
             return BaselineDataset._from_records(records)
@@ -186,7 +190,36 @@ def build_graphqa_datasets(cfg, splits=("train", "val", "test"), base_dir="data/
     return datasets
 
 
-def make_collator(tokenizer, max_length=1024, padding_side="right"):
+def _token_structure_ids(spans, offsets, keep_mask, text_len):
+    """Per-token ``(node_ids, wl_ids)`` from char-level structure spans.
+
+    ``spans`` are ``(char_start, char_end, node_row, wl_row)``. A token takes
+    the row of any span it overlaps; tokens outside every span, or outside
+    ``keep_mask``, get -1.
+    """
+    node_chars = np.full(text_len + 1, -1, dtype=np.int64)
+    wl_chars = np.full(text_len + 1, -1, dtype=np.int64)
+    for start, end, node_row, wl_row in spans:
+        node_chars[start:end] = node_row
+        wl_chars[start:end] = wl_row
+    node_ids = torch.full((offsets.shape[0],), -1, dtype=torch.long)
+    wl_ids = torch.full((offsets.shape[0],), -1, dtype=torch.long)
+    for t, (start, end) in enumerate(offsets.tolist()):
+        if end > start and keep_mask[t]:
+            node_ids[t] = int(node_chars[start:end].max())
+            wl_ids[t] = int(wl_chars[start:end].max())
+    return node_ids, wl_ids
+
+
+def make_collator(tokenizer, max_length=1024, padding_side="right", structure_fn=None):
+    """Tokenize prompts and mask everything but the answer in ``labels``.
+
+    ``structure_fn`` (optional) maps a prompt string to
+    ``(char_start, char_end, node_row, wl_row)`` spans. When set, the batch
+    also carries ``node_ids`` and ``wl_ids`` of shape (B, T), with -1 where a
+    token is no node mention. Answer tokens are always -1, so the answer is
+    never tagged. When it is None, the output is unchanged.
+    """
     if not tokenizer.is_fast:
         raise ValueError(
             "make_collator requires a fast tokenizer "
@@ -215,6 +248,9 @@ def make_collator(tokenizer, max_length=1024, padding_side="right"):
         offsets = enc["offset_mapping"]
 
         labels = input_ids.clone()
+        if structure_fn is not None:
+            node_ids = torch.full_like(input_ids, -1)
+            wl_ids = torch.full_like(input_ids, -1)
         for i in range(len(prompts)):
             # The answer is the suffix of the prompt, so it starts here.
             ans_char_start = len(prompts[i]) - len(answers[i])
@@ -225,14 +261,23 @@ def make_collator(tokenizer, max_length=1024, padding_side="right"):
             # excluded, as are padding positions via the attention mask.
             keep = (ends > ans_char_start) & (attention_mask[i] == 1)
             labels[i][~keep] = -100
+            if structure_fn is not None:
+                prefix_mask = (~keep) & (attention_mask[i] == 1)
+                spans = structure_fn(prompts[i][:ans_char_start])
+                node_ids[i], wl_ids[i] = _token_structure_ids(
+                    spans, offsets[i], prefix_mask, len(prompts[i]))
 
-        return {
+        out = {
             "input_ids": input_ids,
             "attention_mask": attention_mask,
             "labels": labels,
             "algorithm": [item["algorithm"] for item in batch],
             "task": [item["task"] for item in batch],
         }
+        if structure_fn is not None:
+            out["node_ids"] = node_ids
+            out["wl_ids"] = wl_ids
+        return out
 
     return collator
 
