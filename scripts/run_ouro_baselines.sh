@@ -4,6 +4,7 @@
 # with scripts/prepare_local_data.sh.
 #
 #   scripts/run_ouro_baselines.sh                  # id: every in-distribution run
+#   CONFIGS="kqapro_baseline_1b" scripts/run_ouro_baselines.sh   # a subset of id
 #   scripts/run_ouro_baselines.sh ood-baseline     # graphqa LOTO sweep, standard SFT
 #   scripts/run_ouro_baselines.sh ood-meta-icl     # graphqa LOTO sweep, meta-icl
 #   TASKS="ShortestPath MaximumFlow" scripts/run_ouro_baselines.sh ood-baseline
@@ -20,14 +21,17 @@ LOG_DIR=${LOG_DIR:-logs/ouro}
 DRY_RUN=${DRY_RUN:-0}
 export HF_HUB_OFFLINE=${HF_HUB_OFFLINE:-1}
 
+# Meta-icl only on graphqa; MetaQA and KQA Pro run the standard SFT format only,
+# and metaqa-multi is skipped.
+# CONFIGS="a b" overrides the list, e.g. to resume a partially finished queue.
 ID_CONFIGS=(
   baseline_1b meta_icl_1b
-  metaqa_baseline_1b metaqa_meta_icl_1b
-  metaqa_multi_baseline_1b metaqa_multi_meta_icl_1b
+  metaqa_baseline_1b
   metaqa_baseline_gold1_1b metaqa_baseline_gold5_1b metaqa_baseline_gold10_1b
   metaqa_baseline_retrieved1_1b
-  kqapro_baseline_1b kqapro_meta_icl_1b
+  kqapro_baseline_1b
 )
+[[ -n ${CONFIGS:-} ]] && read -r -a ID_CONFIGS <<< "$CONFIGS"
 ALL_TASKS="CycleCheck EdgeExistence NodeCount NodeDegree EdgeCount ConnectedNodes DisconnectedNodes Reachability ShortestPath TriangleCounting MaximumFlow"
 read -r -a OOD_TASKS <<< "${TASKS:-$ALL_TASKS}"
 
