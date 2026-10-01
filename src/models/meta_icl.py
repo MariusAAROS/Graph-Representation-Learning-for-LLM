@@ -1,5 +1,6 @@
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig
 from peft import LoraConfig, get_peft_model
+from omegaconf import OmegaConf
 import os, csv, re
 from datetime import datetime
 import pytorch_lightning as pl
@@ -71,6 +72,15 @@ class MetaICL(pl.LightningModule):
         attn_impl = getattr(self.hparams.model, "attn_implementation", None)
         if attn_impl not in (None, "", "null"):
             load_kwargs["attn_implementation"] = attn_impl
+
+        # HRM-Text recursion depth (H_cycles, L_cycles, L_bp_cycles). Config kwargs of
+        # `from_pretrained`, so the model is built at that depth. The layers per stack
+        # do not depend on them, so the pretrained weights load at any depth.
+        hrm_overrides = getattr(self.hparams.model, "hrm_overrides", None)
+        if hrm_overrides:
+            if OmegaConf.is_config(hrm_overrides):
+                hrm_overrides = OmegaConf.to_container(hrm_overrides, resolve=True)
+            load_kwargs.update(hrm_overrides)
 
         if getattr(self.hparams.model, "text_only", False):
             # Multimodal checkpoints (Gemma-4) build vision/audio towers that this

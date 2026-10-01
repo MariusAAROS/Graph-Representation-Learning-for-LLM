@@ -4,7 +4,8 @@ import os
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 import hydra
-from omegaconf import DictConfig
+import torch
+from omegaconf import DictConfig, OmegaConf
 import pytorch_lightning as pl
 import wandb
 from pytorch_lightning.loggers import WandbLogger
@@ -36,11 +37,19 @@ def train(cfg: DictConfig):
         logger_name = f"{base_name}-ood-{ood_task}"
     else:
         logger_name = f"{base_name}-{'id' if cfg.dataset.test_type == 'standard' else 'ood'}"
+    # Optional W&B extras (absent from every shipped config): a group overriding the
+    # run-name group, tags, and flat config keys for filtering (e.g. H, L, experiment id).
+    wandb_extras = {}
+    if cfg.logger.get("tags", None):
+        wandb_extras["tags"] = list(cfg.logger.tags)
+    if cfg.logger.get("config", None):
+        wandb_extras["config"] = OmegaConf.to_container(cfg.logger.config, resolve=True)
     wandb_logger = WandbLogger(
         project=cfg.logger.project,
         name=logger_name,
-        group=base_name,         # group LOTO runs together for side-by-side comparison
+        group=cfg.logger.get("group", None) or base_name,  # group LOTO runs together for side-by-side comparison
         reinit=True,             # force a new run per Hydra multirun job (same process)
+        **wandb_extras,
     )
 
     datasets = build_graphqa_datasets(cfg, splits=("train", "val"))
@@ -71,6 +80,15 @@ def train(cfg: DictConfig):
             padding_side="right",
         )
 
+    # Optional weights-only warm start from a Lightning checkpoint of this module (e.g. a
+    # finished fine-tune, continued at another recursion depth). The optimizer starts fresh.
+    init_from_ckpt = cfg.model.get("init_from_ckpt", None)
+    if init_from_ckpt:
+        print(f"[init] weights from {init_from_ckpt}")
+        state = torch.load(init_from_ckpt, map_location="cpu", weights_only=False)["state_dict"]
+        model.load_state_dict(state)
+        del state
+
     # Curriculum learning: replace random shuffling with a competence-based
     # sampler that unlocks harder samples as training progresses, while keeping
     # task diversity in each batch. Disabled by default (plain shuffling).
@@ -100,12 +118,20 @@ def train(cfg: DictConfig):
         collate_fn=collator,
     )
 
+    # The default filename contains the metric name, whose "/" nests directories. A run
+    # given an explicit checkpoint_dir gets a flat name instead.
+    checkpoint_dir = cfg.trainer.get("checkpoint_dir", None)
+    if checkpoint_dir:
+        checkpoint_location = dict(dirpath=checkpoint_dir, filename="best-epoch{epoch:02d}",
+                                   auto_insert_metric_name=False)
+    else:
+        checkpoint_location = dict(filename="best-{epoch:02d}-{val/exact_match:.3f}")
     checkpoint_cb = ModelCheckpoint(
         monitor=cfg.trainer.checkpoint_monitor,
         mode=cfg.trainer.checkpoint_mode,
         save_top_k=1,
         save_last=True,
-        filename="best-{epoch:02d}-{val/exact_match:.3f}",
+        **checkpoint_location,
     )
     early_stop_cb = EarlyStopping(
         monitor=cfg.trainer.early_stopping_monitor,
@@ -124,6 +150,14 @@ def train(cfg: DictConfig):
     if curriculum_enabled and cfg.curriculum.get("sampling", "with_replacement") == "eligible_only":
         reload_every = 1
 
+    # Optional limits, passed only when set so the Trainer defaults stay untouched:
+    # max_time ("DD:HH:MM:SS") stops training cleanly before a hard deadline.
+    trainer_extras = {
+        key: cfg.trainer[key]
+        for key in ("max_time", "limit_train_batches", "limit_val_batches")
+        if cfg.trainer.get(key, None) is not None
+    }
+
     trainer = pl.Trainer(
         max_epochs=cfg.trainer.max_epochs,
         precision=cfg.trainer.precision,
@@ -135,9 +169,14 @@ def train(cfg: DictConfig):
         gradient_clip_val=cfg.trainer.gradient_clip_val,
         accumulate_grad_batches=cfg.trainer.gradient_accumulation,
         reload_dataloaders_every_n_epochs=reload_every,
+        **trainer_extras,
     )
 
     try:
+        # Optional step-0 validation, e.g. the score of a warm-started model before it
+        # adapts. Checkpointing and early stopping ignore validate() calls.
+        if cfg.trainer.get("validate_before_fit", False):
+            trainer.validate(model, val_loader)
         trainer.fit(model, train_loader, val_loader)
     finally:
         wandb.finish()   # close this run so the next multirun job starts a fresh one
