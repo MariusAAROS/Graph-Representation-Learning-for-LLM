@@ -6,6 +6,7 @@ those with a Meta-ICL/<run id>/checkpoints/last.ckpt. Prints the newest one on t
 
     python scripts/pretrained_recursion/find_graphqa_ckpt.py
 """
+import ast
 import glob
 import json
 import os
@@ -19,7 +20,12 @@ GRL = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))
 def value(cfg, group):
     entry = cfg.get(group, {})
     entry = entry.get("value", {}) if isinstance(entry, dict) else {}
-    return entry if isinstance(entry, dict) else {}  # some runs log `model` as a plain string
+    if isinstance(entry, str):  # some runs log a group as the repr of a dict
+        try:
+            entry = ast.literal_eval(entry)
+        except (ValueError, SyntaxError):
+            return {}
+    return entry if isinstance(entry, dict) else {}
 
 
 def main():
