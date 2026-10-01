@@ -17,3 +17,5 @@ outputs
 predictions
 Meta-ICL
 multirun
+
+logs/

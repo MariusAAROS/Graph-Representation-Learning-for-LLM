@@ -1,0 +1,13 @@
+# @package _global_
+
+# ByteDance's Ouro looped LM: 24 layers applied total_ut_steps=4 times with a learned
+# early-exit gate, so a step costs ~4x a plain 1.4B transformer. Loaded through the
+# vendored transformers-v5 port in src/models/ouro (the Hub remote code targets 4.55).
+# The SFT loss is Ouro's own: cross-entropy on the gate-weighted mixture of the four
+# steps' logits.
+
+model:
+  name: "ByteDance/Ouro-1.4B"
+
+trainer:
+  gradient_clip_val: 1.0        # 96 effective layers of recurrence; guard against spikes

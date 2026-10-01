@@ -7,7 +7,11 @@ from torch.utils.data import (
 import json
 import os
 
-KNOWN_DATASETS = frozenset({"graphqa", "kqapro", "metaqa", "metaqa-multi"})
+KNOWN_DATASETS = frozenset({
+    "graphqa", "kqapro", "metaqa", "metaqa-multi",
+    # MetaQA answer-size / seeding variants (exploration/metaqa_variants.ipynb)
+    "metaqa-gold-1", "metaqa-gold-5", "metaqa-gold-10", "metaqa-retrieved-1",
+})
 
 
 def read_json(path):

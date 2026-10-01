@@ -7,7 +7,12 @@ uses the official val as its test set.
 Sources, tried in order:
   1. the HuggingFace datasets cache (`drt/kqa_pro`, config `train_val`), read
      directly from the .arrow files so no network or `trust_remote_code` is needed;
-  2. an already-extracted official release directory passed via --zip_dir.
+  2. an already-extracted official release directory passed via --zip_dir;
+  3. the raw release files mirrored in the `drt/kqa_pro` Hub repo (needs network).
+
+The raw release stores `program` as a list of steps, while the HF cache stores it
+column-wise (a dict of lists), which is what the generator reads; raw records are
+converted to the column-wise layout.
 
 Usage:
     python -m scripts.prepare_kqapro_qa
@@ -36,12 +41,31 @@ def _from_hf_cache(split):
     return [dict(r) for r in Dataset.from_file(matches[-1])]
 
 
+def _columnar(record):
+    """Raw-release program (list of steps) -> the HF cache's dict of lists."""
+    program = record["program"]
+    if isinstance(program, list):
+        record = {**record, "program": {
+            key: [step[key] for step in program]
+            for key in ("function", "dependencies", "inputs")
+        }}
+    return record
+
+
+def _from_hub_raw(filename):
+    from huggingface_hub import hf_hub_download
+
+    path = hf_hub_download("drt/kqa_pro", filename, repo_type="dataset")
+    with open(path) as f:
+        return [_columnar(r) for r in json.load(f)]
+
+
 def _from_zip_dir(zip_dir, filename):
     path = os.path.join(zip_dir, filename)
     if not os.path.exists(path):
         return None
     with open(path) as f:
-        return json.load(f)
+        return [_columnar(r) for r in json.load(f)]
 
 
 def main():
@@ -60,6 +84,8 @@ def main():
             records = _from_zip_dir(args.zip_dir, filename)
         if records is None:
             records = _from_hf_cache(hf_split)
+        if records is None:
+            records = _from_hub_raw(filename)
         if records is None:
             raise FileNotFoundError(
                 f"Could not locate the KQA Pro '{split}' split. Either populate the "
