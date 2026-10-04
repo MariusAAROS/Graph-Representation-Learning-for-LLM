@@ -3,10 +3,12 @@
 # KQA Pro with gradient clipping at 1.0, to match the Ouro baseline
 # (configs/model/ouro_1_4b.yaml). Same commands as scripts/jeanzay/*-hrm-id.slurm, run
 # one after another on the local GPU. Runs are named <dataset>-<TAG>-clip1 so they sit
-# next to the unclipped runs in wandb.
+# next to the unclipped runs in wandb. CLIP=0 runs the same recipe without clipping, named
+# <dataset>-<TAG> (the scheme of the unclipped jeanzay runs).
 #
 #   scripts/run_hrm_clip1.sh                                     # HRM-Text-1B
 #   CONFIG=mimir1 TAG=mimir-v1 scripts/run_hrm_clip1.sh          # DFM-Mimir v1
+#   CLIP=0 CONFIG=mimir1 TAG=mimir-v1 scripts/run_hrm_clip1.sh   # DFM-Mimir v1, unclipped
 #   DATASETS="metaqa-gold-1 kqapro" scripts/run_hrm_clip1.sh
 #   DRY_RUN=1 scripts/run_hrm_clip1.sh
 #
@@ -17,7 +19,9 @@ cd "$(dirname "$0")/.."
 PYTHON=${PYTHON:-/home/ucloud/miniforge3/envs/graph-hrm/bin/python}
 CONFIG=${CONFIG:-hrm_text}
 TAG=${TAG:-hrm-text}
-LOG_DIR=${LOG_DIR:-logs/$([[ $TAG == hrm-text ]] && echo hrm || echo "$TAG")_clip1}
+CLIP=${CLIP:-1.0}
+case $CLIP in 0) SUFFIX= ;; 1.0) SUFFIX=-clip1 ;; *) SUFFIX=-clip$CLIP ;; esac
+LOG_DIR=${LOG_DIR:-logs/$([[ $TAG == hrm-text ]] && echo hrm || echo "$TAG")${SUFFIX/-/_}}
 DRY_RUN=${DRY_RUN:-0}
 export PYTHONPATH=.
 export HF_HUB_OFFLINE=${HF_HUB_OFFLINE:-1}
@@ -33,7 +37,7 @@ for i in "${!DATASETS_[@]}"; do
   ds=${DATASETS_[$i]}
   log="$LOG_DIR/$ds.log"
   args="--config-name=$CONFIG dataset.name=$ds dataset.dataset_config=baseline
-    dataset.test_type=standard trainer.gradient_clip_val=1.0 logger.name=$ds-$TAG-clip1"
+    dataset.test_type=standard trainer.gradient_clip_val=$CLIP logger.name=$ds-$TAG$SUFFIX"
   echo "[$((i + 1))/${#DATASETS_[@]}] $(date '+%F %T') $ds -> $log"
   if [[ $DRY_RUN == 1 ]]; then
     echo "    $PYTHON runner.py" $args
